@@ -21,6 +21,7 @@ void  SqueezeDetLossLayer<Dtype>::LayerSetUp(
     normalization_ = this->layer_param_.loss_param().normalization();
   }
 
+  std::vector<std::pair<float, float> > anchor_shapes_;
   if (this->layer_param_.has_squeezedet_param()) {
     anchors_     = this->layer_param_.squeezedet_param().anchors();
     classes_     = this->layer_param_.squeezedet_param().classes();
@@ -30,9 +31,11 @@ void  SqueezeDetLossLayer<Dtype>::LayerSetUp(
 
     CHECK_EQ(this->layer_param_.squeezedet_param().anchor_shapes_size(), 2 * anchors_)
         << "Each anchor must have be specified by two values in the form (width, height)";
+
+    // Anchor shapes of the form `(width, height)`
     for(size_t i = 0; i < this->layer_param_.squeezedet_param().anchor_shapes_size();) {
-      const unsigned int width  = this->layer_param_.squeezedet_param().anchor_shapes(i);
-      const unsigned int height = this->layer_param_.squeezedet_param().anchor_shapes(i+1);
+      const float width  = this->layer_param_.squeezedet_param().anchor_shapes(i);
+      const float height = this->layer_param_.squeezedet_param().anchor_shapes(i+1);
       anchor_shapes_.push_back(std::make_pair(width, height));
       i += 2;
     }
@@ -40,26 +43,69 @@ void  SqueezeDetLossLayer<Dtype>::LayerSetUp(
     LOG(FATAL) << "Must specify loss parameters.";
   }
 
+  // Read the shape of the images which are fed to the network
+  // TODO: Change this to get the resize_param and not random crop
+  if (this->layer_param_.transform_param().crop_size()) {
+      image_height = this->layer_param_.transform_param().crop_size();
+      image_width = this->layer_param_.transform_param().crop_size();
+  } else {
+      LOG(FATAL) << "Must specify the crop-size in `transform_param`.";
+  }
+
   N = bottom[0]->shape(0);
   C = bottom[0]->shape(1);
   H = bottom[0]->shape(2);
   W = bottom[0]->shape(3);
 
-  // Class specific probability distribution values
+  // Compute the `center_x` and `center_y` for all the anchors
+  // NOTE: Currently supported only for square images
+  // Anchor shapes of the form `(center_x, center_y)`
+  std::vector<std::pair<float, float> > anchor_center_;
+  for (int x = 1; x < W+1; ++x) {
+      float c_x = (x * float(image_width)) / (W+1.0);
+      float c_y = (x * float(image_height)) / (W+1.0);
+      anchor_center_.push_back(std::make_pair(c_x, c_y));
+  }
+
+  // Create a 4-d tensor of the form:
+  //  @f$ [center_x, center_y, anchor_height, anchor_width] @f$
+  anchors_values_.resize(H);
+  for (int i = 0; i < H; ++i) {
+      anchors_values_[i].resize(W);
+      for (int j = 0; j < W; ++j) {
+          anchors_values_[i][j].resize(anchors_);
+          for (int k = 0; k < anchors_; ++k) {
+              anchors_values_[i][j][k].resize(4);
+          }
+      }
+  }
+
+  for (int i = 0; i < H; ++i) {
+      for (int j = 0; j < W; ++j) {
+          for (int k = 0; k < anchors_; ++k) {
+              anchors_values_[i][j][k][0] = anchor_center_[i * H + j].first;
+              anchors_values_[i][j][k][1] = anchor_center_[i * W + j].second;
+              anchors_values_[i][j][k][2] = anchor_shapes_[k].first;
+              anchors_values_[i][j][k][3] = anchor_shapes_[k].second;
+          }
+      }
+  }
+
+  // Class specific probability distribution values for each of the anchor
   batch_tot_class_probs = N * H * W * anchors_ * classes_;
   softmax_layer_shape_.push_back(N);
   softmax_layer_shape_.push_back(anchors_ * classes_);
   softmax_layer_shape_.push_back(H);
   softmax_layer_shape_.push_back(W);
 
-  // Confidence Score values
+  // Confidence Score values for each of the anchor
   batch_tot_conf_scores = N * H * W * anchors_ * 1;
   sigmoid_layer_shape_.push_back(N);
   sigmoid_layer_shape_.push_back(anchors_ * 1);
   sigmoid_layer_shape_.push_back(H);
   sigmoid_layer_shape_.push_back(W);
 
-  // Relative coordinate values
+  // Relative coordinate values for each of the anchor
   batch_tot_rel_coord = N * H * W * anchors_ * 4;
   rel_coord_layer_shape_.push_back(N);
   rel_coord_layer_shape_.push_back(anchors_ * 4);
@@ -176,6 +222,11 @@ void SqueezeDetLossLayer<Dtype>::Forward_cpu(
   // @f$ y_{j}^{p} = \hat{y_{j}} + \hat{h_{k}} \delta y_{ijk} @f$
   // @f$ w_{k}^{p} = \hat{w_{k}} \exp{(\delta w_{ijk})} @f$
   // @f$ h_{k}^{p} = \hat{h_{k}} \exp{(\delta h_{ijk})} @f$
+  for (int i = 0; i < H; ++i) {
+      for (int j = 0; j < W; ++j) {
+
+      }
+  }
 
 }
 

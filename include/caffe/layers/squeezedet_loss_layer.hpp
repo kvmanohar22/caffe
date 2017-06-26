@@ -103,11 +103,15 @@ class SqueezeDetLossLayer : public LossLayer<Dtype> {
   int pos_conf_;
   int neg_conf_;
   int lambda_bbox_;
-  std::vector<std::pair<int, int> > anchor_shapes_;
+
+  // Anchor shape of the form
+  // @f$ [center_x, center_y, anchor_height, anchor_width] @f$
+  std::vector<std::vector<std::vector<std::vector<float> > > > anchors_values_;
 
   // Details pertaining to the bottom blob aka output of `ConvDet layer`
   // channels, width, height
   int N, W, H, C;
+  int image_height, image_width;
 };
 
 }  // namespace caffe
