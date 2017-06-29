@@ -10,6 +10,7 @@
 #include "caffe/proto/caffe.pb.h"
 
 #include "caffe/layers/loss_layer.hpp"
+#include "caffe/util/math_functions.hpp"
 #include "caffe/layers/softmax_layer.hpp"
 #include "caffe/layers/sigmoid_layer.hpp"
 
@@ -98,20 +99,45 @@ class SqueezeDetLossLayer : public LossLayer<Dtype> {
   LossParameter_NormalizationMode normalization_;
 
   // Constants specific to Bounding Boxes
-  int anchors_;
+  int anchors_per_grid;
   int classes_;
   int pos_conf_;
   int neg_conf_;
   int lambda_bbox_;
+  // Total number of anchors (= `anchors_per_grid * H * W`)
+  int anchors_;
 
   // Anchor shape of the form
   // @f$ [center_x, center_y, anchor_height, anchor_width] @f$
   std::vector<std::vector<std::vector<std::vector<float> > > > anchors_values_;
 
+  // Anchors predictions from the `ConvDet` layer
+  // @f$ [delta x_{ijk}, delta y_{ijk}, delta h_{ijk}, delta w_{ijk}] @f$
+  std::vector<std::vector<std::vector<std::vector<float> > > > anchors_preds_;
+
+  // Transformed  `ConvDet` predictions to bounding boxes
+  // @f$ [center_x, center_y, anchor_height, anchor_width] @f$
+  std::vector<std::vector<std::vector<std::vector<Dtype> > > > transformed_bbox_preds_;
+
+  // Transformed predicted bounding boxes from:
+  // @f$ [center_x, center_y, anchor_height, anchor_width] @f$ to
+  // @f$ [xmin, ymin, xmax, ymax] @f$
+  std::vector<std::vector<std::vector<std::vector<Dtype> > > > min_max_pred_bboxs_;
+
   // Details pertaining to the bottom blob aka output of `ConvDet layer`
   // channels, width, height
   int N, W, H, C;
   int image_height, image_width;
+
+  // Utility functions
+  void transform_bbox(std::vector<std::vector<std::vector<
+    std::vector<Dtype> > > > &pre,
+    std::vector<std::vector<std::vector<std::vector<Dtype
+    > > > > &post);
+  void transform_bbox_inv(std::vector<std::vector<std::vector<
+    std::vector<Dtype> > > > &pre,
+    std::vector<std::vector<std::vector<std::vector<Dtype
+    > > > > &post);
 };
 
 }  // namespace caffe
