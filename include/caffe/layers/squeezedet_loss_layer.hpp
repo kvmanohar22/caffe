@@ -1,7 +1,7 @@
 #ifndef CAFFE_SQUEEZEDET_LOSS_LAYER_HPP_
 #define CAFFE_SQUEEZEDET_LOSS_LAYER_HPP_
 
-#include <iostream>
+#include <iostream>  // NOLINT(readability/streams)
 #include <memory>
 #include <vector>
 
@@ -10,9 +10,9 @@
 #include "caffe/proto/caffe.pb.h"
 
 #include "caffe/layers/loss_layer.hpp"
-#include "caffe/util/math_functions.hpp"
 #include "caffe/layers/sigmoid_layer.hpp"
 #include "caffe/layers/softmax_layer.hpp"
+#include "caffe/util/math_functions.hpp"
 
 namespace caffe {
 

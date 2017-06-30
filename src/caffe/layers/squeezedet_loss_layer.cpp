@@ -204,7 +204,6 @@ void  SqueezeDetLossLayer<Dtype>::LayerSetUp(
 template <typename Dtype>
 void SqueezeDetLossLayer<Dtype>::Reshape(
     const vector<Blob<Dtype>*>& bottom, const vector<Blob<Dtype>*>& top) {
-
 }
 
 template <typename Dtype>
@@ -396,8 +395,8 @@ void SqueezeDetLossLayer<Dtype>::Forward_cpu(
 
 template <typename Dtype>
 void SqueezeDetLossLayer<Dtype>::transform_bbox(std::vector<std::vector<
-  std::vector<Dtype> > > *pre, std::vector<std::vector<
-  std::vector<Dtype> > > *post) {
+    std::vector<Dtype> > > *pre, std::vector<std::vector<
+    std::vector<Dtype> > > *post) {
 
   for (size_t batch = 0; batch < (*pre).size(); ++batch) {
     for (size_t anchor = 0; anchor < (*pre)[batch].size(); ++anchor) {
@@ -415,8 +414,8 @@ void SqueezeDetLossLayer<Dtype>::transform_bbox(std::vector<std::vector<
 
 template <typename Dtype>
 void SqueezeDetLossLayer<Dtype>::transform_bbox_inv(std::vector<std::vector<
-  std::vector<Dtype> > > *pre, std::vector<std::vector<
-  std::vector<Dtype> > > *post) {
+    std::vector<Dtype> > > *pre, std::vector<std::vector<
+    std::vector<Dtype> > > *post) {
 
   for (size_t batch = 0; batch < (*pre).size(); ++batch) {
     for (size_t anchor = 0; anchor < (*pre)[batch].size(); ++anchor) {
@@ -432,9 +431,9 @@ void SqueezeDetLossLayer<Dtype>::transform_bbox_inv(std::vector<std::vector<
 
 template <typename Dtype>
 void SqueezeDetLossLayer<Dtype>::intersection_over_union(std::vector<
-  std::vector<std::vector<Dtype> > > *predicted_bboxs_, std::vector<
-  std::vector<std::vector<Dtype> > > *gtruth_, std::vector<std::vector<
-  std::vector<float> > > *iou_) {
+    std::vector<std::vector<Dtype> > > *predicted_bboxs_, std::vector<
+    std::vector<std::vector<Dtype> > > *gtruth_, std::vector<std::vector<
+    std::vector<float> > > *iou_) {
 
   for (size_t batch = 0; batch < N; ++batch) {
     for (size_t anchor = 0; anchor < anchors_; ++anchor) {
@@ -457,8 +456,8 @@ void SqueezeDetLossLayer<Dtype>::intersection_over_union(std::vector<
                     - (*predicted_bboxs_)[batch][anchor][0];
         float h_p = (*predicted_bboxs_)[batch][anchor][3]
                     - (*predicted_bboxs_)[batch][anchor][1];
-        float w_g = (*gtruth_)[batch][gtruth][2]-(*gtruth_)[batch][gtruth][0];
-        float h_g = (*gtruth_)[batch][gtruth][3]-(*gtruth_)[batch][gtruth][1];
+        float w_g = (*gtruth_)[batch][gtruth][2] - (*gtruth_)[batch][gtruth][0];
+        float h_g = (*gtruth_)[batch][gtruth][3] - (*gtruth_)[batch][gtruth][1];
         float union_ = w_p * h_p + w_g * h_g - inter_;
         (*iou_)[batch][anchor][gtruth] = inter_ / (union_ + epsilon);
       }
@@ -468,8 +467,7 @@ void SqueezeDetLossLayer<Dtype>::intersection_over_union(std::vector<
 
 template <typename Dtype>
 void SqueezeDetLossLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
-  const vector<bool>& propagate_down, const vector<Blob<Dtype>*>& bottom) {
-
+    const vector<bool>& propagate_down, const vector<Blob<Dtype>*>& bottom) {
 }
 
 #ifdef CPU_ONLY
