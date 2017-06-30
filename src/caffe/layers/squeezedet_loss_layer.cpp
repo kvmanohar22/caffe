@@ -228,7 +228,7 @@ void SqueezeDetLossLayer<Dtype>::Forward_cpu(
   softmax_layer_->Forward(softmax_bottom_vec_, softmax_top_vec_);
   reshape_softmax_layer_->Forward(reshape_softmax_bottom_vec_,
       reshape_softmax_top_vec_);
-  const Dtype* final_softmax_data = reshape_probs_.cpu_data();
+  // const Dtype* final_softmax_data = reshape_probs_.cpu_data();
   // TODO : Be sure along which axis softmax is applied
 
   // separate out the confidence score values from the input blob
@@ -250,7 +250,7 @@ void SqueezeDetLossLayer<Dtype>::Forward_cpu(
   sigmoid_layer_->Forward(sigmoid_bottom_vec_, sigmoid_top_vec_);
   reshape_sigmoid_layer_->Forward(reshape_sigmoid_bottom_vec_,
       reshape_sigmoid_top_vec_);
-  const Dtype* final_sigmoid_data = reshape_conf_.cpu_data();
+  // const Dtype* final_sigmoid_data = reshape_conf_.cpu_data();
 
   // separate out the relative bounding box values from the input blob
   relative_coord_vec_ = new Blob<Dtype>();
