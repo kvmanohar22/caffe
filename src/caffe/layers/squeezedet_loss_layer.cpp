@@ -61,66 +61,51 @@ void  SqueezeDetLossLayer<Dtype>::LayerSetUp(
   C = bottom[0]->shape(1);
   H = bottom[0]->shape(2);
   W = bottom[0]->shape(3);
+  // Total Number of anchors in a batch size of `N`:
+  anchors_ = H * W * anchors_per_grid;
 
   // Compute the `center_x` and `center_y` for all the anchors
-  // NOTE: Currently supported only for square images
   // Anchor shapes of the form `(center_x, center_y)`
-  std::vector<std::pair<float, float> > anchor_center_;
+  std::vector<std::pair<Dtype, Dtype> > anchor_center_;
   for (int x = 1; x < W+1; ++x) {
-      float c_x = (x * float(image_width)) / (W+1.0);
-      float c_y = (x * float(image_height)) / (W+1.0);
+    Dtype c_x = (x * static_cast<Dtype>(image_width)) / (W+1.0);
+    for (int y = 1; y < H+1; ++y) {
+      Dtype c_y = (y * static_cast<Dtype>(image_height)) / (H+1.0);
       anchor_center_.push_back(std::make_pair(c_x, c_y));
+    }
   }
 
-  // Create a 4-d tensor of the form:
-  //  @f$ [center_x, center_y, anchor_height, anchor_width] @f$
-  anchors_values_.resize(H);
-  for (int i = 0; i < H; ++i) {
-      anchors_values_[i].resize(W);
-      for (int j = 0; j < W; ++j) {
-          anchors_values_[i][j].resize(anchors_per_grid);
-          for (int k = 0; k < anchors_per_grid; ++k) {
-              anchors_values_[i][j][k].resize(4);
-          }
-      }
+  // Create a 2-d tensor of the form:
+  // @f$ [anchors_, 4] @f$ where the `4` values are as follows:
+  // @f$ [center_x, center_y, anchor_height, anchor_width] @f$
+  anchors_values_.resize(anchors_);
+  for (int i = 0; i < anchors_; ++i) {
+      anchors_values_[i].resize(4);
   }
   // Do the same for the predictions
-  anchors_preds_.resize(H);
-  for (int i = 0; i < H; ++i) {
-      anchors_preds_[i].resize(W);
-      for (int j = 0; j < W; ++j) {
-          anchors_preds_[i][j].resize(anchors_per_grid);
-          for (int k = 0; k < anchors_per_grid; ++k) {
-              anchors_preds_[i][j][k].resize(4);
-          }
+  anchors_preds_.resize(N);
+  transformed_bbox_preds_.resize(N);
+  min_max_pred_bboxs_.resize(N);
+  for (int i = 0; i < N; ++i) {
+      anchors_preds_[i].resize(anchors_);
+      transformed_bbox_preds_[i].resize(anchors_);
+      min_max_pred_bboxs_[i].resize(anchors_);
+      for (int j = 0; j < anchors_; ++j) {
+        anchors_preds_[i][j].resize(4);
+        transformed_bbox_preds_[i][j].resize(4);
+        min_max_pred_bboxs_[i][j].resize(4);
       }
   }
 
-  // 4d tensor to hold the transformed predictions from ConvDet
-  transformed_bbox_preds_.resize(H);
-  min_max_pred_bboxs_.resize(H);
-  for (int i = 0; i < H; ++i) {
-      transformed_bbox_preds_[i].resize(W);
-      min_max_pred_bboxs_[i].resize(W);
-      for (int j = 0; j < W; ++j) {
-          transformed_bbox_preds_[i][j].resize(anchors_per_grid);
-          min_max_pred_bboxs_[i][j].resize(anchors_per_grid);
-          for (int k = 0; k < anchors_per_grid; ++k) {
-              transformed_bbox_preds_[i][j][k].resize(4);
-              min_max_pred_bboxs_[i][j][k].resize(4);
-          }
-      }
-  }
-
-  for (int i = 0; i < H; ++i) {
-      for (int j = 0; j < W; ++j) {
-          for (int k = 0; k < anchors_per_grid; ++k) {
-              anchors_values_[i][j][k][0] = anchor_center_[i * H + j].first;
-              anchors_values_[i][j][k][1] = anchor_center_[i * W + j].second;
-              anchors_values_[i][j][k][2] = anchor_shapes_[k].first;
-              anchors_values_[i][j][k][3] = anchor_shapes_[k].second;
-          }
-      }
+  for (int anchor = 0, i = 0, j = 0; anchor < anchors_; ++anchor, ++j) {
+    anchors_values_[anchor][0] = anchor_center_[i].first;
+    anchors_values_[anchor][1] = anchor_center_[i].second;
+    anchors_values_[anchor][2] = anchor_shapes_[j].first;
+    anchors_values_[anchor][3] = anchor_shapes_[j].second;
+    if (i == (anchors_per_grid-1)) {
+      i += 1;
+      j = 0;
+    }
   }
 
   // Class specific probability distribution values for each of the anchor
@@ -144,7 +129,7 @@ void  SqueezeDetLossLayer<Dtype>::LayerSetUp(
   rel_coord_layer_shape_.push_back(H);
   rel_coord_layer_shape_.push_back(W);
 
-  // Setup the layers
+  // Softmax Layer and it's reshape layer
   LayerParameter softmax_param(this->layer_param_);
   softmax_param.set_type("Softmax");
   softmax_layer_ = LayerRegistry<Dtype>::CreateLayer(softmax_param);
@@ -153,7 +138,26 @@ void  SqueezeDetLossLayer<Dtype>::LayerSetUp(
   softmax_top_vec_.clear();
   softmax_top_vec_.push_back(&probs_);
   softmax_layer_->SetUp(softmax_bottom_vec_, softmax_top_vec_);
+  // Reshape the output of softmax layer
+  LayerParameter reshape_soft_param(this->layer_param_);
+  reshape_soft_param.set_type("Reshape");
+  reshape_soft_param.clear_reshape_param();
+  reshape_soft_param.mutable_reshape_param()->mutable_shape()->set_dim(0,
+      N);
+  reshape_soft_param.mutable_reshape_param()->mutable_shape()->set_dim(1,
+      anchors_);
+  reshape_soft_param.mutable_reshape_param()->mutable_shape()->set_dim(2,
+      classes_);
+  reshape_softmax_layer_ = LayerRegistry<Dtype>::CreateLayer(
+      reshape_soft_param);
+  reshape_softmax_bottom_vec_.clear();
+  reshape_softmax_bottom_vec_.push_back(&probs_);
+  reshape_softmax_top_vec_.clear();
+  reshape_softmax_top_vec_.push_back(&reshape_probs_);
+  reshape_softmax_layer_->SetUp(reshape_softmax_bottom_vec_,
+      reshape_softmax_top_vec_);
 
+  // Sigmoid layer and it's reshape layer
   LayerParameter sigmoid_param(this->layer_param_);
   sigmoid_param.set_type("Sigmoid");
   sigmoid_layer_ = LayerRegistry<Dtype>::CreateLayer(sigmoid_param);
@@ -162,6 +166,38 @@ void  SqueezeDetLossLayer<Dtype>::LayerSetUp(
   sigmoid_top_vec_.clear();
   sigmoid_top_vec_.push_back(&conf_);
   sigmoid_layer_->SetUp(sigmoid_bottom_vec_, sigmoid_top_vec_);
+  // Reshape the output of sigmoid layer
+  LayerParameter reshape_sigmoid_param(this->layer_param_);
+  reshape_sigmoid_param.set_type("Reshape");
+  reshape_sigmoid_param.clear_reshape_param();
+  reshape_sigmoid_param.mutable_reshape_param()->mutable_shape()->set_dim(0,
+      N);
+  reshape_sigmoid_param.mutable_reshape_param()->mutable_shape()->set_dim(1,
+      anchors_);
+  reshape_sigmoid_layer_ = LayerRegistry<Dtype>::CreateLayer(
+      reshape_sigmoid_param);
+  reshape_sigmoid_bottom_vec_.clear();
+  reshape_sigmoid_bottom_vec_.push_back(&conf_);
+  reshape_sigmoid_top_vec_.clear();
+  reshape_sigmoid_top_vec_.push_back(&reshape_conf_);
+  reshape_sigmoid_layer_->SetUp(reshape_sigmoid_bottom_vec_,
+      reshape_sigmoid_top_vec_);
+
+  // Reshape the relative bbox coordinates
+  LayerParameter reshape_bbox_param(this->layer_param_);
+  reshape_bbox_param.set_type("Reshape");
+  reshape_bbox_param.clear_reshape_param();
+  reshape_bbox_param.mutable_reshape_param()->mutable_shape()->set_dim(0,
+      N);
+  reshape_bbox_param.mutable_reshape_param()->mutable_shape()->set_dim(1,
+      anchors_);
+  reshape_bbox_param.mutable_reshape_param()->mutable_shape()->set_dim(2,
+      4);
+  reshape_bbox_layer_ = LayerRegistry<Dtype>::CreateLayer(reshape_bbox_param);
+  reshape_bbox_bottom_vec_.clear();
+  reshape_bbox_bottom_vec_.push_back(relative_coord_vec_);
+  reshape_bbox_top_vec_.clear();
+  reshape_bbox_top_vec_.push_back(&reshape_coord_vec_);
 }
 
 template <typename Dtype>
@@ -175,33 +211,34 @@ void SqueezeDetLossLayer<Dtype>::Forward_cpu(
     const vector<Blob<Dtype>*>& bottom, const vector<Blob<Dtype>*>& top) {
 
   // separate out the class probability specific values from the input blob
-  delete softmax_input_vec_;
   softmax_input_vec_ = new Blob<Dtype>();
   softmax_input_vec_->Reshape(softmax_layer_shape_);
   Dtype* softmax_layer_data_ = softmax_input_vec_->mutable_cpu_data();
-  for(size_t batch = 0, idx = 0; batch < N; ++batch) {
-    for(size_t height = 0; height < H; ++height) {
-      for(size_t width = 0; width < W; ++width) {
-        for(size_t ch = 0; ch < anchors_per_grid * classes_; ++ch) {
-          softmax_layer_data_[idx] = bottom[0]->data_at(batch, ch, height, width);
+  for (size_t batch = 0, idx = 0; batch < N; ++batch) {
+    for (size_t height = 0; height < H; ++height) {
+      for (size_t width = 0; width < W; ++width) {
+        for (size_t ch = 0; ch < anchors_per_grid * classes_; ++ch) {
+          softmax_layer_data_[idx] =
+            bottom[0]->data_at(batch, ch, height, width);
           ++idx;
         }
       }
     }
   }
   softmax_layer_->Forward(softmax_bottom_vec_, softmax_top_vec_);
-  // TODO : Reshape the output of softmax (aka `prob_`) to [N, anchors_, classes]
+  reshape_softmax_layer_->Forward(reshape_softmax_bottom_vec_,
+      reshape_softmax_top_vec_);
+  const Dtype* final_softmax_data = reshape_probs_.cpu_data();
   // TODO : Be sure along which axis softmax is applied
 
   // separate out the confidence score values from the input blob
-  delete sigmoid_input_vec_;
   sigmoid_input_vec_ = new Blob<Dtype>();
   sigmoid_input_vec_->Reshape(sigmoid_layer_shape_);
   Dtype* sigmoid_layer_data_ = sigmoid_input_vec_->mutable_cpu_data();
-  for(size_t batch = 0, idx = 0; batch < N; ++batch) {
-    for(size_t height = 0; height < H; ++height) {
-      for(size_t width = 0; width < W; ++width) {
-        for(size_t ch = anchors_per_grid * classes_;
+  for (size_t batch = 0, idx = 0; batch < N; ++batch) {
+    for (size_t height = 0; height < H; ++height) {
+      for (size_t width = 0; width < W; ++width) {
+        for (size_t ch = anchors_per_grid * classes_;
             ch < anchors_per_grid * classes_ + anchors_per_grid * 1; ++ch) {
           sigmoid_layer_data_[idx] =
             bottom[0]->data_at(batch, ch, height, width);
@@ -211,17 +248,18 @@ void SqueezeDetLossLayer<Dtype>::Forward_cpu(
     }
   }
   sigmoid_layer_->Forward(sigmoid_bottom_vec_, sigmoid_top_vec_);
-  // TODO : Reshape the output of sigmoid (aka conf_) to [N, anchors_, 1]
+  reshape_sigmoid_layer_->Forward(reshape_sigmoid_bottom_vec_,
+      reshape_sigmoid_top_vec_);
+  const Dtype* final_sigmoid_data = reshape_conf_.cpu_data();
 
   // separate out the relative bounding box values from the input blob
-  delete relative_coord_vec_;
   relative_coord_vec_ = new Blob<Dtype>();
   relative_coord_vec_->Reshape(rel_coord_layer_shape_);
   Dtype* rel_coord_data_ = relative_coord_vec_->mutable_cpu_data();
-  for(size_t batch = 0, idx = 0; batch < N; ++batch) {
-    for(size_t height = 0; height < H; ++height) {
-      for(size_t width = 0; width < W; ++width) {
-        for(size_t ch = anchors_per_grid * (classes_ + 1);
+  for (size_t batch = 0, idx = 0; batch < N; ++batch) {
+    for (size_t height = 0; height < H; ++height) {
+      for (size_t width = 0; width < W; ++width) {
+        for (size_t ch = anchors_per_grid * (classes_ + 1);
             ch < anchors_per_grid * (classes_ + 1 + 4); ++ch) {
           rel_coord_data_[idx] = bottom[0]->data_at(batch, ch, height, width);
           ++idx;
@@ -229,7 +267,9 @@ void SqueezeDetLossLayer<Dtype>::Forward_cpu(
       }
     }
   }
-  // TODO : Reshape `rel_coord_vec_` to [N, anchors_, 4]
+  reshape_bbox_layer_->Forward(reshape_bbox_bottom_vec_,
+      reshape_bbox_top_vec_);
+  const Dtype* final_bbox_data_ = reshape_coord_vec_.cpu_data();
 
   // Calculate the number of objects to normalize the regression loss
   int num_objects_ = 0;
@@ -254,20 +294,20 @@ void SqueezeDetLossLayer<Dtype>::Forward_cpu(
     i += (preds[i] * 5 + 1);
   }
 
-  for (int i = 0; i < H; ++i) {
-      for (int j = 0; j < W; ++j) {
-          for (int k = 0; k < anchors_per_grid; ++k) {
-              anchors_preds_[i][j][k][0] =
-                        rel_coord_data_[((i * W + j) * anchors_per_grid + k) * 4 + 0];
-              anchors_preds_[i][j][k][1] =
-                        rel_coord_data_[((i * W + j) * anchors_per_grid + k) * 4 + 1];
-              anchors_preds_[i][j][k][2] =
-                        rel_coord_data_[((i * W + j) * anchors_per_grid + k) * 4 + 2];
-              anchors_preds_[i][j][k][3] =
-                        rel_coord_data_[((i * W + j) * anchors_per_grid + k) * 4 + 3];
-          }
-      }
+// Compute relative coordinates predicted from the `ConvDet` layer
+  for (int batch = 0; batch < N; ++batch) {
+    for (int anchor = 0; anchor < anchors_; ++anchor) {
+      anchors_preds_[batch][anchor][0] = final_bbox_data_[(batch * anchors_
+          + anchor) + 0];
+      anchors_preds_[batch][anchor][1] = final_bbox_data_[(batch * anchors_
+          + anchor) + 1];
+      anchors_preds_[batch][anchor][2] = final_bbox_data_[(batch * anchors_
+          + anchor) + 2];
+      anchors_preds_[batch][anchor][3] = final_bbox_data_[(batch * anchors_
+          + anchor) + 3];
+    }
   }
+
 
   // Compute bounding box predictions from ConvDet predictions
   // Bounding box predictions are of the following form:
@@ -277,43 +317,48 @@ void SqueezeDetLossLayer<Dtype>::Forward_cpu(
   // @f$ y_{j}^{p} = \hat{y_{j}} + \hat{h_{k}} \delta y_{ijk} @f$
   // @f$ h_{k}^{p} = \hat{h_{k}} \exp{(\delta h_{ijk})} @f$
   // @f$ w_{k}^{p} = \hat{w_{k}} \exp{(\delta w_{ijk})} @f$
-  for (int i = 0; i < H; ++i) {
-    for (int j = 0; j < W; ++j) {
-      for (int k = 0; k < anchors_per_grid; ++k) {
-        transformed_bbox_preds_[i][j][k][0] = anchors_values_[i][j][k][0]
-          + anchors_values_[i][j][k][2] * anchors_preds_[i][j][k][0];
-        transformed_bbox_preds_[i][j][k][1] = anchors_values_[i][j][k][1]
-          + anchors_values_[i][j][k][3] * anchors_preds_[i][j][k][1];
-
-        float delta_w, delta_h;
-        caffe::caffe_exp(1, &anchors_preds_[i][j][k][2], &delta_h);
-        transformed_bbox_preds_[i][j][k][2] =
-          anchors_values_[i][j][k][2] * delta_h;
-        caffe::caffe_exp(1, &anchors_preds_[i][j][k][3], &delta_w);
-        transformed_bbox_preds_[i][j][k][3] =
-          anchors_values_[i][j][k][3] * delta_w;
-      }
+  for (int batch = 0; batch < N; ++batch) {
+    for (int anchor = 0; anchor < anchors_; ++anchor) {
+      Dtype delta_h, delta_w;
+      caffe::caffe_exp(1, &anchors_preds_[batch][anchor][2], &delta_h);
+      caffe::caffe_exp(1, &anchors_preds_[batch][anchor][3], &delta_w);
+      transformed_bbox_preds_[batch][anchor][0] = anchors_values_[anchor][0]
+          + anchors_values_[anchor][3] * anchors_preds_[batch][anchor][0];
+      transformed_bbox_preds_[batch][anchor][1] = anchors_values_[anchor][1]
+          + anchors_values_[anchor][2] * anchors_preds_[batch][anchor][1];
+      transformed_bbox_preds_[batch][anchor][2] = anchors_values_[anchor][2]
+          * delta_h;
+      transformed_bbox_preds_[batch][anchor][3] = anchors_values_[anchor][3]
+          * delta_w;
     }
   }
 
-// Transform the predicted bounding boxes from the form:
+// Transform each predicted bounding boxes from the form:
 // @f$ [center_x, center_y, anchor_height, anchor_width] @f$ to
 // @f$ [xmin, ymin, xmax, ymax] @f$
   transform_bbox(transformed_bbox_preds_, min_max_pred_bboxs_);
 
-// Ensure that `(xmin, ymin, xmax, ymax)` are within range of image dimensions
-  for (size_t i = 0; i < H; ++i) {
-    for (size_t j = 0; j < W; ++j) {
-      for (size_t k = 0; k < anchors_per_grid; ++k) {
-        Dtype p_xmin = min_max_pred_bboxs_[i][j][k][0];
-        Dtype p_ymin = min_max_pred_bboxs_[i][j][k][1];
-        Dtype p_xmax = min_max_pred_bboxs_[i][j][k][2];
-        Dtype p_ymax = min_max_pred_bboxs_[i][j][k][3];
-        min_max_pred_bboxs_[i][j][k][0] = std::min(std::max(Dtype(0.0), p_xmin), image_width-Dtype(1.0));
-        min_max_pred_bboxs_[i][j][k][1] = std::min(std::max(Dtype(0.0), p_ymin), image_height-Dtype(1.0));
-        min_max_pred_bboxs_[i][j][k][2] = std::max(std::min(image_width-Dtype(1.0), p_xmax), Dtype(0.0));
-        min_max_pred_bboxs_[i][j][k][3] = std::max(std::min(image_height-Dtype(1.0), p_ymax), Dtype(0.0));
-      }
+// Ensure that `(xmin, ymin, xmax, ymax)` for each of the predicted box
+// are within range of image dimensions
+  for (size_t batch = 0; batch < N; ++batch) {
+    for (size_t anchor = 0; anchor < anchors_; ++anchor) {
+      Dtype p_xmin = min_max_pred_bboxs_[batch][anchor][0];
+      Dtype p_ymin = min_max_pred_bboxs_[batch][anchor][1];
+      Dtype p_xmax = min_max_pred_bboxs_[batch][anchor][2];
+      Dtype p_ymax = min_max_pred_bboxs_[batch][anchor][3];
+
+      min_max_pred_bboxs_[batch][anchor][0] = std::min(std::max(
+        static_cast<Dtype>(0.0), p_xmin), image_width -
+        static_cast<Dtype>(1.0));
+      min_max_pred_bboxs_[batch][anchor][1] = std::min(std::max(
+        static_cast<Dtype>(0.0), p_ymin), image_height -
+        static_cast<Dtype>(1.0));
+      min_max_pred_bboxs_[batch][anchor][2] = std::max(std::min(
+        image_width - static_cast<Dtype>(1.0), p_xmax),
+        static_cast<Dtype>(0.0));
+      min_max_pred_bboxs_[batch][anchor][3] = std::max(std::min(
+        image_height - static_cast<Dtype>(1.0), p_ymax),
+        static_cast<Dtype>(0.0));
     }
   }
 
@@ -321,48 +366,49 @@ void SqueezeDetLossLayer<Dtype>::Forward_cpu(
   // @f$ [center_x, center_y, anchor_height, anchor_width] @f$
   transform_bbox_inv(min_max_pred_bboxs_, transformed_bbox_preds_);
 
+  // Compute IOU for the predicted boxes and the ground truth
+
+  // Free memory
+  delete softmax_input_vec_;
+  delete sigmoid_input_vec_;
+  delete relative_coord_vec_;
 }
 
 template <typename Dtype>
 void SqueezeDetLossLayer<Dtype>::transform_bbox(std::vector<std::vector<
-  std::vector<std::vector<Dtype> > > > &pre, std::vector<std::vector<
-  std::vector<std::vector<Dtype> > > > &post) {
+  std::vector<Dtype> > > &pre, std::vector<std::vector<
+  std::vector<Dtype> > > &post) {
 
-  for (size_t i = 0; i < H; ++i) {
-    for (size_t j = 0; j < W; ++j) {
-      for (size_t k = 0; k < anchors_per_grid; ++k) {
-        Dtype c_x = pre[i][j][k][0];
-        Dtype c_y = pre[i][j][k][1];
-        Dtype b_h = pre[i][j][k][2];
-        Dtype b_w = pre[i][j][k][3];
-        post[i][j][k][0] = c_x - b_w / 2.0;
-        post[i][j][k][1] = c_y - b_h / 2.0;
-        post[i][j][k][2] = c_x + b_w / 2.0;
-        post[i][j][k][3] = c_y + b_h / 2.0;
-      }
+  for (size_t batch = 0; batch < N; ++batch) {
+    for (size_t anchor = 0; anchor < anchors_; ++anchor) {
+      Dtype c_x = pre[batch][anchor][0];
+      Dtype c_y = pre[batch][anchor][1];
+      Dtype b_h = pre[batch][anchor][2];
+      Dtype b_w = pre[batch][anchor][3];
+      post[batch][anchor][0] = c_x - b_w / 2.0;
+      post[batch][anchor][1] = c_y - b_h / 2.0;
+      post[batch][anchor][2] = c_x + b_w / 2.0;
+      post[batch][anchor][3] = c_y + b_h / 2.0;
     }
   }
 }
 
 template <typename Dtype>
 void SqueezeDetLossLayer<Dtype>::transform_bbox_inv(std::vector<std::vector<
-  std::vector<std::vector<Dtype> > > > &pre, std::vector<std::vector<
-  std::vector<std::vector<Dtype> > > > &post) {
+  std::vector<Dtype> > > &pre, std::vector<std::vector<
+  std::vector<Dtype> > > &post) {
 
-  for (size_t i = 0; i < H; ++i) {
-    for (size_t j = 0; j < W; ++j) {
-      for (size_t k = 0; k < anchors_per_grid; ++k) {
-        Dtype width = pre[i][j][k][2] - pre[i][j][k][0] + 1.0;
-        Dtype height = pre[i][j][k][3] - pre[i][j][k][1] + 1.0;
-        post[i][j][k][0] = pre[i][j][k][0] + 0.5 * width;
-        post[i][j][k][1] = pre[i][j][k][1] + 0.5 * height;
-        post[i][j][k][2] = height;
-        post[i][j][k][3] = width;
-      }
+  for (size_t batch = 0; batch < N; ++batch) {
+    for (size_t anchor = 0; anchor < anchors_; ++anchor) {
+      Dtype width = pre[batch][anchor][2] - pre[batch][anchor][0] + 1.0;
+      Dtype height = pre[batch][anchor][3] - pre[batch][anchor][1] + 1.0;
+      post[batch][anchor][0] = pre[batch][anchor][0] + 0.5 * width;
+      post[batch][anchor][1] = pre[batch][anchor][1] + 0.5 * height;
+      post[batch][anchor][2] = height;
+      post[batch][anchor][3] = width;
     }
   }
 }
-
 
 template <typename Dtype>
 void SqueezeDetLossLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
@@ -377,4 +423,4 @@ STUB_GPU(SqueezeDetLossLayer);
 INSTANTIATE_CLASS(SqueezeDetLossLayer);
 REGISTER_LAYER_CLASS(SqueezeDetLoss);
 
-} // namespace caffe
+}  // namespace caffe
