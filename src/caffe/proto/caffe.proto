@@ -1170,6 +1170,8 @@ message SqueezeDetLossParameter {
   // bias value to account for bounding box(s) which are nearest to
   // a ground truth bounding box(s)
   required int32 lambda_bbox = 7;
+  // a value to ensure that `union` of two rectangles is not zero
+  optional double epsilon = 8 [default = 1e-7];
 }
 
 message TanHParameter {

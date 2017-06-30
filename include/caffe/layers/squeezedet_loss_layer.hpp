@@ -146,12 +146,33 @@ class SqueezeDetLossLayer : public LossLayer<Dtype> {
   // channels, width, height
   int N, W, H, C;
   int image_height, image_width;
+  double epsilon;
 
   // Utility functions
-  void transform_bbox(std::vector<std::vector<std::vector<Dtype> > > &pre,
-    std::vector<std::vector<std::vector<Dtype> > > &post);
-  void transform_bbox_inv(std::vector<std::vector<std::vector<Dtype> > > &pre,
-    std::vector<std::vector<std::vector<Dtype> > > &post);
+  void transform_bbox(std::vector<std::vector<std::vector<Dtype> > > *pre,
+    std::vector<std::vector<std::vector<Dtype> > > *post);
+  void transform_bbox_inv(std::vector<std::vector<std::vector<Dtype> > > *pre,
+    std::vector<std::vector<std::vector<Dtype> > > *post);
+
+   /**
+    * @brief Computes `IOU` for a batch of data.
+    *
+    * @param predicted_bboxs_ : [N, anchors_, 4]
+    *   - N        : batch_size
+    *   - anchors_ : (the total number of anchors) `H * W * anchors_per_grid`
+    *   - `4`      : @f$ [xmin, ymin, xmax, ymax] @f$
+    * @param gtruth_ : [N, objects_, 4]
+    *   - N        : batch_size
+    *   - objects_ : represents the number of objects in an image
+    *   - `4`      : @f$ [xmin, ymin, xmax, ymax] @f$
+    * @param iou_ : [N, anchors_, objects_]
+    *   - N        : batch_size
+    *   - anchors_ : (the total number of anchors) `H * W * anchors_per_grid`
+    *   - objects_ : `IOU` value for each of the object with ground truth
+    */
+    void intersection_over_union(std::vector<std::vector<std::vector<Dtype> > >
+    *predicted_bboxs_, std::vector<std::vector<std::vector<Dtype> > > *gtruth_,
+    std::vector<std::vector<std::vector<float> > > *iou_);
 };
 
 }  // namespace caffe
