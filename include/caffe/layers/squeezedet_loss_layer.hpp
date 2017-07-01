@@ -110,14 +110,21 @@ class SqueezeDetLossLayer : public LossLayer<Dtype> {
   // Mode of normalization
   LossParameter_NormalizationMode normalization_;
 
-  // Constants specific to Bounding Boxes
+   /* @brief Constants specific to Bounding Boxes
+    * - anchors_per_grid : The number of anchors at each (i, j) of ConvDet
+    *                      activation map
+    * - classes_ : The total number of classes of objects
+    * - pos_conf_ : @f$ \lambda_{conf}^{+} @f$
+    * - neg_conf_ : @f$ \lambda_{conf}^{-} @f$
+    * - lambda_bbox_ : @f$ \lambda_{bbox} @f$
+    * - anchors_ : The total number of anchors predicted
+    *              `H * W * anchors_per_grid`
+    */
   int anchors_per_grid;
   int classes_;
   int pos_conf_;
   int neg_conf_;
   int lambda_bbox_;
-
-  // Total number of anchors (= `anchors_per_grid * H * W`)
   int anchors_;
 
   // Anchor shape of the form

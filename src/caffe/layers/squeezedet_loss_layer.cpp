@@ -228,7 +228,7 @@ void SqueezeDetLossLayer<Dtype>::Forward_cpu(
   softmax_layer_->Forward(softmax_bottom_vec_, softmax_top_vec_);
   reshape_softmax_layer_->Forward(reshape_softmax_bottom_vec_,
       reshape_softmax_top_vec_);
-  // const Dtype* final_softmax_data = reshape_probs_.cpu_data();
+  const Dtype* final_softmax_data = reshape_probs_.cpu_data();
   // TODO : Be sure along which axis softmax is applied
 
   // separate out the confidence score values from the input blob
@@ -250,7 +250,7 @@ void SqueezeDetLossLayer<Dtype>::Forward_cpu(
   sigmoid_layer_->Forward(sigmoid_bottom_vec_, sigmoid_top_vec_);
   reshape_sigmoid_layer_->Forward(reshape_sigmoid_bottom_vec_,
       reshape_sigmoid_top_vec_);
-  // const Dtype* final_sigmoid_data = reshape_conf_.cpu_data();
+  const Dtype* final_sigmoid_data = reshape_conf_.cpu_data();
 
   // separate out the relative bounding box values from the input blob
   relative_coord_vec_ = new Blob<Dtype>();
@@ -387,6 +387,24 @@ void SqueezeDetLossLayer<Dtype>::Forward_cpu(
   // Compute IOU for the predicted boxes and the ground truth
   intersection_over_union(&min_max_pred_bboxs_, &min_max_gtruth_, &iou_);
 
+  // Compute final class specific probabilities
+  std::vector<std::vector<std::vector<Dtype> > > final_prob_;
+  final_prob_.resize(N);
+  for (size_t batch = 0; batch < N; ++batch) {
+    final_prob_[batch].resize(anchors_);
+    for (size_t anchor = 0; anchor < anchors_; ++anchor) {
+      final_prob_[batch][anchor].resize(classes_);
+    }
+  }
+  for (size_t batch = 0; batch < N; ++batch) {
+    for (size_t anchor = 0; anchor < anchors_; ++anchor) {
+      for (size_t _class = 0; _class < classes_; ++_class) {
+        final_prob_[batch][anchor][_class] = final_softmax_data[(batch *
+            anchors_ + anchor) * classes_ + _class] * final_sigmoid_data[batch
+            * anchors_ + anchor];
+      }
+    }
+  }
   // Free memory
   delete softmax_input_vec_;
   delete sigmoid_input_vec_;
