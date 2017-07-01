@@ -110,7 +110,8 @@ class SqueezeDetLossLayer : public LossLayer<Dtype> {
   // Mode of normalization
   LossParameter_NormalizationMode normalization_;
 
-   /* @brief Constants specific to Bounding Boxes
+   /**
+    * @brief Constants specific to Bounding Boxes
     * - anchors_per_grid : The number of anchors at each (i, j) of ConvDet
     *                      activation map
     * - classes_ : The total number of classes of objects
@@ -172,14 +173,19 @@ class SqueezeDetLossLayer : public LossLayer<Dtype> {
     *   - N        : batch_size
     *   - objects_ : represents the number of objects in an image
     *   - `4`      : @f$ [xmin, ymin, xmax, ymax] @f$
-    * @param iou_ : [N, anchors_, objects_]
+    * @param iou_ : [N, objects_, anchors_]
     *   - N        : batch_size
-    *   - anchors_ : (the total number of anchors) `H * W * anchors_per_grid`
     *   - objects_ : `IOU` value for each of the object with ground truth
+    *   - anchors_ : (the total number of anchors) `H * W * anchors_per_grid`
     */
     void intersection_over_union(std::vector<std::vector<std::vector<Dtype> > >
     *predicted_bboxs_, std::vector<std::vector<std::vector<Dtype> > > *gtruth_,
     std::vector<std::vector<std::vector<float> > > *iou_);
+
+   /**
+    * @brief Compute the class regression loss
+    *
+    */
 };
 
 }  // namespace caffe

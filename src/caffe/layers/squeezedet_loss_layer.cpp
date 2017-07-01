@@ -405,6 +405,76 @@ void SqueezeDetLossLayer<Dtype>::Forward_cpu(
       }
     }
   }
+
+  std::vector<Dtype> class_reg_loss;
+  std::vector<Dtype> conf_reg_loss;
+  std::vector<Dtype> bbox_reg_loss;
+  Dtype loss = 0;
+  // Compute the `class regression loss`
+  for (size_t batch = 0; batch < N; ++batch) {
+    Dtype l = 0;
+    for (size_t obj = 0; obj < batch_num_objs_[batch]; ++obj) {
+      const int max_iou_indx = std::max_element(iou_[batch][obj].begin(),
+          iou_[batch][obj].end()) - iou_[batch][obj].begin();
+      const int correct_indx = static_cast<int>(gtruth_[batch][obj][5]);
+      DCHECK_GE(correct_indx, 0);
+      DCHECK_GE(max_iou_indx, 0);
+      DCHECK_LT(correct_indx, classes_);
+      DCHECK_LT(max_iou_indx, anchors_);
+      l -= log(final_softmax_data[(batch * anchors_ + max_iou_indx) * classes_
+          + correct_indx]);
+    }
+    class_reg_loss.push_back(l / batch_num_objs_[batch]);
+  }
+
+  // Compute the `confidence score regression loss`
+  for (size_t batch = 0; batch < N; ++batch) {
+    Dtype l1 = 0;
+    Dtype l2 = 0;
+    for (size_t obj = 0; obj < batch_num_objs_[batch]; ++obj) {
+      const int max_iou_indx = std::max_element(iou_[batch][obj].begin(),
+          iou_[batch][obj].end()) - iou_[batch][obj].begin();
+      DCHECK_GE(max_iou_indx, 0);
+      DCHECK_LT(max_iou_indx, anchors_);
+      for (size_t anchor = 0; anchor < anchors_; ++anchor) {
+        Dtype exp_val;
+        if (anchor == max_iou_indx) {
+          Dtype diff_val = final_sigmoid_data[batch * anchors_ + anchor]
+              - iou_[batch][obj][max_iou_indx];
+          caffe::caffe_powx(1, &diff_val, static_cast<Dtype>(2.0), &exp_val);
+          l1 += (pos_conf_ / batch_num_objs_[batch]) * exp_val;
+        } else {
+          Dtype diff_val = final_sigmoid_data[batch * anchors_ + anchor];
+          caffe::caffe_powx(1, &diff_val, static_cast<Dtype>(2.0), &exp_val);
+          l2 += (neg_conf_ / (anchors_ - batch_num_objs_[batch])) * exp_val;
+        }
+      }
+    }
+    conf_reg_loss.push_back(l1+l2);
+  }
+
+  // Compute bounding `box regression loss`
+
+  for (typename std::vector<Dtype>::iterator itr = class_reg_loss.begin();
+      itr != class_reg_loss.end(); ++itr) {
+    loss += (*itr);
+  }
+  for (typename std::vector<Dtype>::iterator itr = conf_reg_loss.begin();
+      itr != conf_reg_loss.end(); ++itr) {
+    loss += (*itr);
+  }
+  for (typename std::vector<Dtype>::iterator itr = bbox_reg_loss.begin();
+      itr != bbox_reg_loss.end(); ++itr) {
+    loss += (*itr);
+  }
+  int total_batch_objs = 0;
+  for (std::vector<int>::iterator itr = batch_num_objs_.begin();
+      itr != batch_num_objs_.end(); ++itr) {
+    total_batch_objs += *itr;
+  }
+  // TODO : Use the normalization parameter from protobuf message
+  top[0]->mutable_cpu_data()[0] = loss / total_batch_objs;
+
   // Free memory
   delete softmax_input_vec_;
   delete sigmoid_input_vec_;
@@ -453,6 +523,7 @@ void SqueezeDetLossLayer<Dtype>::intersection_over_union(std::vector<
     std::vector<std::vector<Dtype> > > *gtruth_, std::vector<std::vector<
     std::vector<float> > > *iou_) {
 
+  // TODO : Change the order of the tensor
   for (size_t batch = 0; batch < N; ++batch) {
     for (size_t anchor = 0; anchor < anchors_; ++anchor) {
       for (size_t gtruth = 0; gtruth < (*gtruth_)[batch].size(); ++gtruth) {
