@@ -288,17 +288,17 @@ void SqueezeDetLossLayer<Dtype>::Forward_cpu(
     gtruth_[i].resize(batch_num_objs_[i]);
     min_max_gtruth_[i].resize(batch_num_objs_[i]);
     for (size_t j = 0; j < batch_num_objs_[i]; ++j) {
-      gtruth_[i][j].resize(5);
-      min_max_gtruth_[i][j].resize(4);
+      gtruth_[i][j].resize(4);
+      min_max_gtruth_[i][j].resize(5);
     }
   }
   for (size_t batch = 0, i = 0; batch < N; ++batch) {
     for (size_t obj = 0; obj < batch_num_objs_[batch]; ++obj) {
-      gtruth_[batch][obj][0] = bottom[1]->data_at(i + obj * 5 + 1, 1, 1, 1);
-      gtruth_[batch][obj][1] = bottom[1]->data_at(i + obj * 5 + 2, 1, 1, 1);
-      gtruth_[batch][obj][2] = bottom[1]->data_at(i + obj * 5 + 3, 1, 1, 1);
-      gtruth_[batch][obj][3] = bottom[1]->data_at(i + obj * 5 + 4, 1, 1, 1);
-      gtruth_[batch][obj][4] = bottom[1]->data_at(i + obj * 5 + 5, 1, 1, 1);
+      min_max_gtruth_[batch][obj][0] = bottom[1]->data_at(i + obj * 5 + 1, 1, 1, 1);
+      min_max_gtruth_[batch][obj][1] = bottom[1]->data_at(i + obj * 5 + 2, 1, 1, 1);
+      min_max_gtruth_[batch][obj][2] = bottom[1]->data_at(i + obj * 5 + 3, 1, 1, 1);
+      min_max_gtruth_[batch][obj][3] = bottom[1]->data_at(i + obj * 5 + 4, 1, 1, 1);
+      min_max_gtruth_[batch][obj][4] = bottom[1]->data_at(i + obj * 5 + 5, 1, 1, 1);
     }
     i += (batch_num_objs_[batch] * 5 + 1);
   }
@@ -383,7 +383,7 @@ void SqueezeDetLossLayer<Dtype>::Forward_cpu(
     }
   }
 
-  transform_bbox(&gtruth_, &min_max_gtruth_);
+  transform_bbox_inv(&min_max_gtruth_, &gtruth_);
   // Compute IOU for the predicted boxes and the ground truth
   intersection_over_union(&min_max_pred_bboxs_, &min_max_gtruth_, &iou_);
 
@@ -416,7 +416,7 @@ void SqueezeDetLossLayer<Dtype>::Forward_cpu(
     for (size_t obj = 0; obj < batch_num_objs_[batch]; ++obj) {
       const int max_iou_indx = std::max_element(iou_[batch][obj].begin(),
           iou_[batch][obj].end()) - iou_[batch][obj].begin();
-      const int correct_indx = static_cast<int>(gtruth_[batch][obj][5]);
+      const int correct_indx = static_cast<int>(min_max_gtruth_[batch][obj][5]);
       DCHECK_GE(correct_indx, 0);
       DCHECK_GE(max_iou_indx, 0);
       DCHECK_LT(correct_indx, classes_);
@@ -454,6 +454,43 @@ void SqueezeDetLossLayer<Dtype>::Forward_cpu(
   }
 
   // Compute bounding `box regression loss`
+  std::vector<std::vector<std::vector<std::vector<Dtype> > > > gtruth_inv_;
+  gtruth_inv_.resize(N);
+  for (size_t batch = 0; batch < N; ++batch) {
+    gtruth_inv_[batch].resize(batch_num_objs_[batch]);
+    for (size_t obj = 0; obj < batch_num_objs_[batch]; ++obj) {
+      gtruth_inv_[batch][obj].resize(anchors_);
+      for (size_t anchor = 0; anchor < anchors_; ++anchor) {
+        gtruth_inv_[batch][obj][anchor].resize(4);
+      }
+    }
+  }
+  gtruth_inv_transform(&gtruth_, &batch_num_objs_, &gtruth_inv_);
+  for (size_t batch = 0; batch < N; ++batch) {
+    Dtype l = 0;
+    for (size_t obj = 0; obj < batch_num_objs_[batch]; ++obj) {
+      const int max_iou_indx = std::max_element(iou_[batch][obj].begin(),
+          iou_[batch][obj].end()) - iou_[batch][obj].begin();
+      DCHECK_GE(max_iou_indx, 0);
+      DCHECK_LT(max_iou_indx, anchors_);
+      Dtype exp_val_x, exp_val_y, exp_val_h, exp_val_w;
+      Dtype diff_val_x, diff_val_y, diff_val_h, diff_val_w;
+      diff_val_x = final_bbox_data_[(batch * anchors_ + max_iou_indx) * 4
+            + 0] - gtruth_inv_[batch][obj][max_iou_indx][0];
+      diff_val_y = final_bbox_data_[(batch * anchors_ + max_iou_indx) * 4
+            + 1] - gtruth_inv_[batch][obj][max_iou_indx][1];
+      diff_val_h = final_bbox_data_[(batch * anchors_ + max_iou_indx) * 4
+            + 2] - gtruth_inv_[batch][obj][max_iou_indx][2];
+      diff_val_w = final_bbox_data_[(batch * anchors_ + max_iou_indx) * 4
+            + 3] - gtruth_inv_[batch][obj][max_iou_indx][3];
+      caffe::caffe_powx(1, &diff_val_x, static_cast<Dtype>(2.0), &exp_val_x);
+      caffe::caffe_powx(1, &diff_val_y, static_cast<Dtype>(2.0), &exp_val_y);
+      caffe::caffe_powx(1, &diff_val_h, static_cast<Dtype>(2.0), &exp_val_h);
+      caffe::caffe_powx(1, &diff_val_w, static_cast<Dtype>(2.0), &exp_val_w);
+      l += (exp_val_x + exp_val_y + exp_val_h + exp_val_w);
+    }
+    bbox_reg_loss.push_back((l * lambda_bbox_) / (batch_num_objs_[batch]));
+  }
 
   for (typename std::vector<Dtype>::iterator itr = class_reg_loss.begin();
       itr != class_reg_loss.end(); ++itr) {
@@ -472,7 +509,7 @@ void SqueezeDetLossLayer<Dtype>::Forward_cpu(
       itr != batch_num_objs_.end(); ++itr) {
     total_batch_objs += *itr;
   }
-  // TODO : Use the normalization parameter from protobuf message
+  // TODO : Use normalization param from protobuf message to normalize loss
   top[0]->mutable_cpu_data()[0] = loss / total_batch_objs;
 
   // Free memory
@@ -520,21 +557,22 @@ void SqueezeDetLossLayer<Dtype>::transform_bbox_inv(std::vector<std::vector<
 template <typename Dtype>
 void SqueezeDetLossLayer<Dtype>::intersection_over_union(std::vector<
     std::vector<std::vector<Dtype> > > *predicted_bboxs_, std::vector<
-    std::vector<std::vector<Dtype> > > *gtruth_, std::vector<std::vector<
-    std::vector<float> > > *iou_) {
+    std::vector<std::vector<Dtype> > > *min_max_gtruth_, std::vector<
+    std::vector<std::vector<float> > > *iou_) {
 
   // TODO : Change the order of the tensor
   for (size_t batch = 0; batch < N; ++batch) {
     for (size_t anchor = 0; anchor < anchors_; ++anchor) {
-      for (size_t gtruth = 0; gtruth < (*gtruth_)[batch].size(); ++gtruth) {
+      for (size_t gtruth = 0; gtruth < (*min_max_gtruth_)[batch].size();
+            ++gtruth) {
         Dtype xmin = std::max((*predicted_bboxs_)[batch][anchor][0],
-                              (*gtruth_)[batch][gtruth][0]);
+                              (*min_max_gtruth_)[batch][gtruth][0]);
         Dtype ymin = std::max((*predicted_bboxs_)[batch][anchor][1],
-                              (*gtruth_)[batch][gtruth][1]);
+                              (*min_max_gtruth_)[batch][gtruth][1]);
         Dtype xmax = std::min((*predicted_bboxs_)[batch][anchor][2],
-                              (*gtruth_)[batch][gtruth][2]);
+                              (*min_max_gtruth_)[batch][gtruth][2]);
         Dtype ymax = std::min((*predicted_bboxs_)[batch][anchor][3],
-                              (*gtruth_)[batch][gtruth][3]);
+                              (*min_max_gtruth_)[batch][gtruth][3]);
 
         // Compute the intersection
         float w = std::max(static_cast<Dtype>(0.0), xmax - xmin);
@@ -545,8 +583,10 @@ void SqueezeDetLossLayer<Dtype>::intersection_over_union(std::vector<
                     - (*predicted_bboxs_)[batch][anchor][0];
         float h_p = (*predicted_bboxs_)[batch][anchor][3]
                     - (*predicted_bboxs_)[batch][anchor][1];
-        float w_g = (*gtruth_)[batch][gtruth][2] - (*gtruth_)[batch][gtruth][0];
-        float h_g = (*gtruth_)[batch][gtruth][3] - (*gtruth_)[batch][gtruth][1];
+        float w_g = (*min_max_gtruth_)[batch][gtruth][2]
+                    - (*min_max_gtruth_)[batch][gtruth][0];
+        float h_g = (*min_max_gtruth_)[batch][gtruth][3]
+                    - (*min_max_gtruth_)[batch][gtruth][1];
         float union_ = w_p * h_p + w_g * h_g - inter_;
         (*iou_)[batch][anchor][gtruth] = inter_ / (union_ + epsilon);
       }
@@ -554,6 +594,32 @@ void SqueezeDetLossLayer<Dtype>::intersection_over_union(std::vector<
   }
 }
 
+template <typename Dtype>
+void SqueezeDetLossLayer<Dtype>::gtruth_inv_transform(std::vector<std::vector<
+    std::vector<Dtype> > > *gtruth_, std::vector<int> *batch_num_objs_,
+    std::vector<std::vector<std::vector<std::vector<Dtype> > > >
+    *gtruth_inv_) {
+
+    for (size_t batch = 0; batch < N; ++batch) {
+      for (size_t anchor = 0; anchor < anchors_; ++anchor) {
+        Dtype x_hat = anchors_values_[anchor][0];
+        Dtype y_hat = anchors_values_[anchor][1];
+        Dtype h_hat = anchors_values_[anchor][2];
+        Dtype w_hat = anchors_values_[anchor][3];
+        for (size_t obj = 0; obj < (*batch_num_objs_)[batch]; ++obj) {
+          Dtype x_g = (*gtruth_)[batch][obj][0];
+          Dtype y_g = (*gtruth_)[batch][obj][1];
+          Dtype h_g = (*gtruth_)[batch][obj][2];
+          Dtype w_g = (*gtruth_)[batch][obj][3];
+
+          (*gtruth_inv_)[batch][obj][anchor][0] = (x_g - x_hat) / w_hat;
+          (*gtruth_inv_)[batch][obj][anchor][1] = (y_g - y_hat) / h_hat;
+          (*gtruth_inv_)[batch][obj][anchor][2] = log(h_g / h_hat);
+          (*gtruth_inv_)[batch][obj][anchor][3] = log(w_g / w_hat);
+        }
+      }
+    }
+}
 template <typename Dtype>
 void SqueezeDetLossLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
     const vector<bool>& propagate_down, const vector<Blob<Dtype>*>& bottom) {

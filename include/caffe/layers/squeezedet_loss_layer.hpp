@@ -169,7 +169,7 @@ class SqueezeDetLossLayer : public LossLayer<Dtype> {
     *   - N        : batch_size
     *   - anchors_ : (the total number of anchors) `H * W * anchors_per_grid`
     *   - `4`      : @f$ [xmin, ymin, xmax, ymax] @f$
-    * @param gtruth_ : [N, objects_, 4]
+    * @param min_max_gtruth_ : [N, objects_, 4]
     *   - N        : batch_size
     *   - objects_ : represents the number of objects in an image
     *   - `4`      : @f$ [xmin, ymin, xmax, ymax] @f$
@@ -179,13 +179,30 @@ class SqueezeDetLossLayer : public LossLayer<Dtype> {
     *   - anchors_ : (the total number of anchors) `H * W * anchors_per_grid`
     */
     void intersection_over_union(std::vector<std::vector<std::vector<Dtype> > >
-    *predicted_bboxs_, std::vector<std::vector<std::vector<Dtype> > > *gtruth_,
-    std::vector<std::vector<std::vector<float> > > *iou_);
+    *predicted_bboxs_, std::vector<std::vector<std::vector<Dtype> > >
+    *min_max_gtruth_, std::vector<std::vector<std::vector<float> > > *iou_);
 
    /**
-    * @brief Compute the class regression loss
+    * @brief Do the inverse transformation on the ground truth data
+    *       Mathematically, it is the following transformation
     *
+    * @param gtruth_ : [N, objects_, 4]
+    *   - N        : batch_size
+    *   - objects_ : represents the number of objects in an image_width
+    *   - 4        : @f$ [center_x, center_y, anchor_height, anchor_width] @f$
+    * @param batch_num_objs_ : [N]
+    *   - N        : The total number of objects in each image of a batch
+    * @param gtruth_inv_ : [N, objs, anchors_, 4]
+    *   - N        : batch_size
+    *   - objs     : Number of objects in each image
+    *   - anchors_ : the total number of anchors `H * W * anchors_per_grid`
+    *   - 4        : @f$ [\delta x_{ijk}^{G}, \delta y_{ijk}^{G},
+    *                     \delta h_{ijk}^{G}, \delta w_{ijk}^{G}]
     */
+    void gtruth_inv_transform(std::vector<std::vector<std::vector<Dtype> > >
+    *gtruth_, std::vector<int> *batch_num_objs_, std::vector<std::vector<
+    std::vector<std::vector<Dtype> > > > *gtruth_inv_);
+
 };
 
 }  // namespace caffe
