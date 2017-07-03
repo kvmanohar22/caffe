@@ -294,11 +294,16 @@ void SqueezeDetLossLayer<Dtype>::Forward_cpu(
   }
   for (size_t batch = 0, i = 0; batch < N; ++batch) {
     for (size_t obj = 0; obj < batch_num_objs_[batch]; ++obj) {
-      min_max_gtruth_[batch][obj][0] = bottom[1]->data_at(i + obj * 5 + 1, 1, 1, 1);
-      min_max_gtruth_[batch][obj][1] = bottom[1]->data_at(i + obj * 5 + 2, 1, 1, 1);
-      min_max_gtruth_[batch][obj][2] = bottom[1]->data_at(i + obj * 5 + 3, 1, 1, 1);
-      min_max_gtruth_[batch][obj][3] = bottom[1]->data_at(i + obj * 5 + 4, 1, 1, 1);
-      min_max_gtruth_[batch][obj][4] = bottom[1]->data_at(i + obj * 5 + 5, 1, 1, 1);
+      min_max_gtruth_[batch][obj][0] = bottom[1]->data_at(i + obj * 5
+            + 1, 1, 1, 1);
+      min_max_gtruth_[batch][obj][1] = bottom[1]->data_at(i + obj * 5
+            + 2, 1, 1, 1);
+      min_max_gtruth_[batch][obj][2] = bottom[1]->data_at(i + obj * 5
+            + 3, 1, 1, 1);
+      min_max_gtruth_[batch][obj][3] = bottom[1]->data_at(i + obj * 5
+            + 4, 1, 1, 1);
+      min_max_gtruth_[batch][obj][4] = bottom[1]->data_at(i + obj * 5
+            + 5, 1, 1, 1);
     }
     i += (batch_num_objs_[batch] * 5 + 1);
   }
@@ -600,25 +605,25 @@ void SqueezeDetLossLayer<Dtype>::gtruth_inv_transform(std::vector<std::vector<
     std::vector<std::vector<std::vector<std::vector<Dtype> > > >
     *gtruth_inv_) {
 
-    for (size_t batch = 0; batch < N; ++batch) {
-      for (size_t anchor = 0; anchor < anchors_; ++anchor) {
-        Dtype x_hat = anchors_values_[anchor][0];
-        Dtype y_hat = anchors_values_[anchor][1];
-        Dtype h_hat = anchors_values_[anchor][2];
-        Dtype w_hat = anchors_values_[anchor][3];
-        for (size_t obj = 0; obj < (*batch_num_objs_)[batch]; ++obj) {
-          Dtype x_g = (*gtruth_)[batch][obj][0];
-          Dtype y_g = (*gtruth_)[batch][obj][1];
-          Dtype h_g = (*gtruth_)[batch][obj][2];
-          Dtype w_g = (*gtruth_)[batch][obj][3];
+  for (size_t batch = 0; batch < N; ++batch) {
+    for (size_t anchor = 0; anchor < anchors_; ++anchor) {
+      Dtype x_hat = anchors_values_[anchor][0];
+      Dtype y_hat = anchors_values_[anchor][1];
+      Dtype h_hat = anchors_values_[anchor][2];
+      Dtype w_hat = anchors_values_[anchor][3];
+      for (size_t obj = 0; obj < (*batch_num_objs_)[batch]; ++obj) {
+        Dtype x_g = (*gtruth_)[batch][obj][0];
+        Dtype y_g = (*gtruth_)[batch][obj][1];
+        Dtype h_g = (*gtruth_)[batch][obj][2];
+        Dtype w_g = (*gtruth_)[batch][obj][3];
 
-          (*gtruth_inv_)[batch][obj][anchor][0] = (x_g - x_hat) / w_hat;
-          (*gtruth_inv_)[batch][obj][anchor][1] = (y_g - y_hat) / h_hat;
-          (*gtruth_inv_)[batch][obj][anchor][2] = log(h_g / h_hat);
-          (*gtruth_inv_)[batch][obj][anchor][3] = log(w_g / w_hat);
-        }
+        (*gtruth_inv_)[batch][obj][anchor][0] = (x_g - x_hat) / w_hat;
+        (*gtruth_inv_)[batch][obj][anchor][1] = (y_g - y_hat) / h_hat;
+        (*gtruth_inv_)[batch][obj][anchor][2] = log(h_g / h_hat);
+        (*gtruth_inv_)[batch][obj][anchor][3] = log(w_g / w_hat);
       }
     }
+  }
 }
 template <typename Dtype>
 void SqueezeDetLossLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,

@@ -183,7 +183,7 @@ class SqueezeDetLossLayer : public LossLayer<Dtype> {
     *min_max_gtruth_, std::vector<std::vector<std::vector<float> > > *iou_);
 
    /**
-    * @brief Do the inverse transformation on the ground truth data
+    * @brief Do the inverse transformation othe ground truth data
     *       Mathematically, it is the following transformation
     *
     * @param gtruth_ : [N, objects_, 4]
