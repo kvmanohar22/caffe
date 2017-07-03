@@ -202,6 +202,7 @@ class SqueezeDetLossLayer : public LossLayer<Dtype> {
     void gtruth_inv_transform(std::vector<std::vector<std::vector<Dtype> > >
     *gtruth_, std::vector<int> *batch_num_objs_, std::vector<std::vector<
     std::vector<std::vector<Dtype> > > > *gtruth_inv_);
+
 };
 
 }  // namespace caffe

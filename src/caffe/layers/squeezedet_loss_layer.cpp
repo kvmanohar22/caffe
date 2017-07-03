@@ -2,6 +2,7 @@
 #include <cfloat>
 #include <utility>
 #include <vector>
+#include <fstream>
 
 #include "caffe/layers/squeezedet_loss_layer.hpp"
 #include "caffe/util/math_functions.hpp"
@@ -22,9 +23,10 @@ void  SqueezeDetLossLayer<Dtype>::LayerSetUp(
     normalization_ = this->layer_param_.loss_param().normalization();
   }
 
+
   std::vector<std::pair<float, float> > anchor_shapes_;
   if (this->layer_param_.has_squeezedet_param()) {
-    anchors_per_grid     = this->layer_param_.squeezedet_param().anchors();
+    anchors_per_grid     = this->layer_param_.squeezedet_param().anchors_per_grid();
     classes_     = this->layer_param_.squeezedet_param().classes();
     pos_conf_    = this->layer_param_.squeezedet_param().pos_conf();
     neg_conf_    = this->layer_param_.squeezedet_param().neg_conf();
@@ -55,7 +57,8 @@ void  SqueezeDetLossLayer<Dtype>::LayerSetUp(
       image_height = this->layer_param_.transform_param().crop_size();
       image_width = this->layer_param_.transform_param().crop_size();
   } else {
-      LOG(FATAL) << "Must specify the crop-size in `transform_param`.";
+      image_width = 416;
+      image_height = 416;
   }
 
   N = bottom[0]->shape(0);
@@ -133,22 +136,19 @@ void  SqueezeDetLossLayer<Dtype>::LayerSetUp(
   // Softmax Layer and it's reshape layer
   LayerParameter softmax_param(this->layer_param_);
   softmax_param.set_type("Softmax");
+  softmax_input_vec_ = new Blob<Dtype>(softmax_layer_shape_);
   softmax_layer_ = LayerRegistry<Dtype>::CreateLayer(softmax_param);
   softmax_bottom_vec_.clear();
   softmax_bottom_vec_.push_back(softmax_input_vec_);
   softmax_top_vec_.clear();
   softmax_top_vec_.push_back(&probs_);
   softmax_layer_->SetUp(softmax_bottom_vec_, softmax_top_vec_);
-  // Reshape the output of softmax layer
   LayerParameter reshape_soft_param(this->layer_param_);
   reshape_soft_param.set_type("Reshape");
   reshape_soft_param.clear_reshape_param();
-  reshape_soft_param.mutable_reshape_param()->mutable_shape()->set_dim(0,
-      N);
-  reshape_soft_param.mutable_reshape_param()->mutable_shape()->set_dim(1,
-      anchors_);
-  reshape_soft_param.mutable_reshape_param()->mutable_shape()->set_dim(2,
-      classes_);
+  reshape_soft_param.mutable_reshape_param()->mutable_shape()->add_dim(N);
+  reshape_soft_param.mutable_reshape_param()->mutable_shape()->add_dim(anchors_);
+  reshape_soft_param.mutable_reshape_param()->mutable_shape()->add_dim(classes_);
   reshape_softmax_layer_ = LayerRegistry<Dtype>::CreateLayer(
       reshape_soft_param);
   reshape_softmax_bottom_vec_.clear();
@@ -161,20 +161,18 @@ void  SqueezeDetLossLayer<Dtype>::LayerSetUp(
   // Sigmoid layer and it's reshape layer
   LayerParameter sigmoid_param(this->layer_param_);
   sigmoid_param.set_type("Sigmoid");
+  sigmoid_input_vec_ = new Blob<Dtype>(sigmoid_layer_shape_);
   sigmoid_layer_ = LayerRegistry<Dtype>::CreateLayer(sigmoid_param);
   sigmoid_bottom_vec_.clear();
   sigmoid_bottom_vec_.push_back(sigmoid_input_vec_);
   sigmoid_top_vec_.clear();
   sigmoid_top_vec_.push_back(&conf_);
   sigmoid_layer_->SetUp(sigmoid_bottom_vec_, sigmoid_top_vec_);
-  // Reshape the output of sigmoid layer
   LayerParameter reshape_sigmoid_param(this->layer_param_);
   reshape_sigmoid_param.set_type("Reshape");
   reshape_sigmoid_param.clear_reshape_param();
-  reshape_sigmoid_param.mutable_reshape_param()->mutable_shape()->set_dim(0,
-      N);
-  reshape_sigmoid_param.mutable_reshape_param()->mutable_shape()->set_dim(1,
-      anchors_);
+  reshape_sigmoid_param.mutable_reshape_param()->mutable_shape()->add_dim(N);
+  reshape_sigmoid_param.mutable_reshape_param()->mutable_shape()->add_dim(anchors_);
   reshape_sigmoid_layer_ = LayerRegistry<Dtype>::CreateLayer(
       reshape_sigmoid_param);
   reshape_sigmoid_bottom_vec_.clear();
@@ -188,13 +186,11 @@ void  SqueezeDetLossLayer<Dtype>::LayerSetUp(
   LayerParameter reshape_bbox_param(this->layer_param_);
   reshape_bbox_param.set_type("Reshape");
   reshape_bbox_param.clear_reshape_param();
-  reshape_bbox_param.mutable_reshape_param()->mutable_shape()->set_dim(0,
-      N);
-  reshape_bbox_param.mutable_reshape_param()->mutable_shape()->set_dim(1,
-      anchors_);
-  reshape_bbox_param.mutable_reshape_param()->mutable_shape()->set_dim(2,
-      4);
+  reshape_bbox_param.mutable_reshape_param()->mutable_shape()->add_dim(N);
+  reshape_bbox_param.mutable_reshape_param()->mutable_shape()->add_dim(anchors_);
+  reshape_bbox_param.mutable_reshape_param()->mutable_shape()->add_dim(4);
   reshape_bbox_layer_ = LayerRegistry<Dtype>::CreateLayer(reshape_bbox_param);
+  relative_coord_vec_ = new Blob<Dtype>(rel_coord_layer_shape_);
   reshape_bbox_bottom_vec_.clear();
   reshape_bbox_bottom_vec_.push_back(relative_coord_vec_);
   reshape_bbox_top_vec_.clear();
@@ -211,8 +207,6 @@ void SqueezeDetLossLayer<Dtype>::Forward_cpu(
     const vector<Blob<Dtype>*>& bottom, const vector<Blob<Dtype>*>& top) {
 
   // separate out the class probability specific values from the input blob
-  softmax_input_vec_ = new Blob<Dtype>();
-  softmax_input_vec_->Reshape(softmax_layer_shape_);
   Dtype* softmax_layer_data_ = softmax_input_vec_->mutable_cpu_data();
   for (size_t batch = 0, idx = 0; batch < N; ++batch) {
     for (size_t height = 0; height < H; ++height) {
@@ -229,11 +223,11 @@ void SqueezeDetLossLayer<Dtype>::Forward_cpu(
   reshape_softmax_layer_->Forward(reshape_softmax_bottom_vec_,
       reshape_softmax_top_vec_);
   const Dtype* final_softmax_data = reshape_probs_.cpu_data();
+  const Dtype* final_softmax_data = probs_.cpu_data();
   // TODO : Be sure along which axis softmax is applied
 
+
   // separate out the confidence score values from the input blob
-  sigmoid_input_vec_ = new Blob<Dtype>();
-  sigmoid_input_vec_->Reshape(sigmoid_layer_shape_);
   Dtype* sigmoid_layer_data_ = sigmoid_input_vec_->mutable_cpu_data();
   for (size_t batch = 0, idx = 0; batch < N; ++batch) {
     for (size_t height = 0; height < H; ++height) {
@@ -253,7 +247,6 @@ void SqueezeDetLossLayer<Dtype>::Forward_cpu(
   const Dtype* final_sigmoid_data = reshape_conf_.cpu_data();
 
   // separate out the relative bounding box values from the input blob
-  relative_coord_vec_ = new Blob<Dtype>();
   relative_coord_vec_->Reshape(rel_coord_layer_shape_);
   Dtype* rel_coord_data_ = relative_coord_vec_->mutable_cpu_data();
   for (size_t batch = 0, idx = 0; batch < N; ++batch) {
@@ -516,11 +509,6 @@ void SqueezeDetLossLayer<Dtype>::Forward_cpu(
   }
   // TODO : Use normalization param from protobuf message to normalize loss
   top[0]->mutable_cpu_data()[0] = loss / total_batch_objs;
-
-  // Free memory
-  delete softmax_input_vec_;
-  delete sigmoid_input_vec_;
-  delete relative_coord_vec_;
 }
 
 template <typename Dtype>
@@ -604,7 +592,8 @@ void SqueezeDetLossLayer<Dtype>::gtruth_inv_transform(std::vector<std::vector<
     std::vector<Dtype> > > *gtruth_, std::vector<int> *batch_num_objs_,
     std::vector<std::vector<std::vector<std::vector<Dtype> > > >
     *gtruth_inv_) {
-    for (size_t batch = 0; batch < N; ++batch) {
+
+  for (size_t batch = 0; batch < N; ++batch) {
     for (size_t anchor = 0; anchor < anchors_; ++anchor) {
       Dtype x_hat = anchors_values_[anchor][0];
       Dtype y_hat = anchors_values_[anchor][1];
@@ -627,6 +616,16 @@ void SqueezeDetLossLayer<Dtype>::gtruth_inv_transform(std::vector<std::vector<
 template <typename Dtype>
 void SqueezeDetLossLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
     const vector<bool>& propagate_down, const vector<Blob<Dtype>*>& bottom) {
+  if (propagate_down[1]) {
+    LOG(FATAL) << this->type()
+               << " Layer cannot backpropagate to label inputs.";
+  }
+  if (propagate_down[0]) {
+    Dtype* bottom_diff = bottom[0]->mutable_cpu_diff();
+    for (size_t i = 0; i < bottom[0]->count(); ++i) {
+      bottom_diff[i] = 0;
+    }
+  }
 }
 
 #ifdef CPU_ONLY
