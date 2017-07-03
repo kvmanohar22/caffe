@@ -604,8 +604,7 @@ void SqueezeDetLossLayer<Dtype>::gtruth_inv_transform(std::vector<std::vector<
     std::vector<Dtype> > > *gtruth_, std::vector<int> *batch_num_objs_,
     std::vector<std::vector<std::vector<std::vector<Dtype> > > >
     *gtruth_inv_) {
-
-  for (size_t batch = 0; batch < N; ++batch) {
+    for (size_t batch = 0; batch < N; ++batch) {
     for (size_t anchor = 0; anchor < anchors_; ++anchor) {
       Dtype x_hat = anchors_values_[anchor][0];
       Dtype y_hat = anchors_values_[anchor][1];
