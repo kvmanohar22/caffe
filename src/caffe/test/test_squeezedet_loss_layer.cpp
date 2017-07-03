@@ -22,7 +22,6 @@ class SqueezeDetLossLayerTest : public MultiDeviceTest<TypeParam> {
       : blob_bottom_data_(new Blob<Dtype>(1, 7, 7, 20)),
         blob_bottom_label_(new Blob<Dtype>(6, 1, 1, 1)),
         blob_top_loss_(new Blob<Dtype>()) {
-
     // Fill the data
     FillerParameter filler_param;
     filler_param.set_std(10);
