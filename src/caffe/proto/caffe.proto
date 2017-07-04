@@ -1156,7 +1156,7 @@ message SqueezeDetLossParameter {
   // The number of classes an object is to be classified
   required uint32 classes = 2;
   // The number of anchors shapes
-  required uint32 anchors = 3;
+  required uint32 anchors_per_grid = 3;
   // Shapes of the corresponding anchors
   // In total `2 * anchors` should be specified in the form
   // (width, height)

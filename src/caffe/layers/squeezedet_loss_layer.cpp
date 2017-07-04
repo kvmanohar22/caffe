@@ -223,7 +223,6 @@ void SqueezeDetLossLayer<Dtype>::Forward_cpu(
   reshape_softmax_layer_->Forward(reshape_softmax_bottom_vec_,
       reshape_softmax_top_vec_);
   const Dtype* final_softmax_data = reshape_probs_.cpu_data();
-  const Dtype* final_softmax_data = probs_.cpu_data();
   // TODO : Be sure along which axis softmax is applied
 
 
