@@ -126,11 +126,12 @@ class SqueezeDetLossLayer : public LossLayer<Dtype> {
   int pos_conf_;
   int neg_conf_;
   int lambda_bbox_;
+  int lambda_conf;
   int anchors_;
 
   // Anchor shape of the form
   // @f$ [anchors_, 4] @f$ where `4` values are as follows:
-  // @f$ [center_x, center_y, anchor_height, anchor_width] @f$
+  // @f$ [\hat{x_{i}}, \hat{y_{j}}, \hat{h_{k}}, \hat{w_{k}}] @f$
   std::vector<std::vector<Dtype> > anchors_values_;
 
   // Anchors predictions from the `ConvDet` layer which are of shape:
@@ -154,6 +155,7 @@ class SqueezeDetLossLayer : public LossLayer<Dtype> {
   // channels, width, height
   int N, W, H, C;
   int image_height, image_width;
+  int softmax_axis_;
   double epsilon;
 
   // Utility functions
@@ -171,7 +173,7 @@ class SqueezeDetLossLayer : public LossLayer<Dtype> {
     *   - `4`      : @f$ [xmin, ymin, xmax, ymax] @f$
     * @param min_max_gtruth_ : [N, objects_, 4]
     *   - N        : batch_size
-    *   - objects_ : represents the number of objects in an image
+    *   - objects_ : Number of objects in an image
     *   - `4`      : @f$ [xmin, ymin, xmax, ymax] @f$
     * @param iou_ : [N, objects_, anchors_]
     *   - N        : batch_size
@@ -183,7 +185,7 @@ class SqueezeDetLossLayer : public LossLayer<Dtype> {
     *min_max_gtruth_, std::vector<std::vector<std::vector<float> > > *iou_);
 
    /**
-    * @brief Do the inverse transformation othe ground truth data
+    * @brief Do the inverse transformation of the ground truth data
     *       Mathematically, it is the following transformation
     *
     * @param gtruth_ : [N, objects_, 4]
@@ -203,6 +205,44 @@ class SqueezeDetLossLayer : public LossLayer<Dtype> {
     *gtruth_, std::vector<int> *batch_num_objs_, std::vector<std::vector<
     std::vector<std::vector<Dtype> > > > *gtruth_inv_);
 
+   /**
+    * @brief Compute bounding box predictions from ConvDet predictions
+    *       Mathematically, it is the following transformation
+    *
+    *  Transformation is as follows:
+    *  @f$ x_{i}^{p} = \hat{x_{i}} + \hat{w_{k}} \delta x_{ijk} @f$
+    *  @f$ y_{j}^{p} = \hat{y_{j}} + \hat{h_{k}} \delta y_{ijk} @f$
+    *  @f$ h_{k}^{p} = \hat{h_{k}} \exp{(\delta h_{ijk})} @f$
+    *  @f$ w_{k}^{p} = \hat{w_{k}} \exp{(\delta w_{ijk})} @f$
+    *
+    * @param anchors_preds_ : [N, anchors_, 4]
+    *   - N        : batch_size
+    *   - anchors_ : the total number of anchors `H * W * anchors_per_grid`
+    *   - 4        : @f$ [\delta x_{ijk}, \delta y_{ijk},
+    *                     \delta h_{ijk}, \delta w_{ijk}] @f$
+    * @param anchors_values_ : [anchors_, 4]
+    *   - anchors_ : Predefined shapes of each anchor
+    *   - 4        : @f$ [\hat{x_{i}}, \hat{y_{j}},
+    *                     \hat{h_{k}}, \hat{w_{k}}] @f$
+    * @param transformed_bbox_preds_ : [N, anchors_, 4]
+    *   - N        : batch_size
+    *   - anchors_ : the total number of anchors `H * W * anchors_per_grid`
+    *   - 4        : @f$ [x_{i}^{p}, y_{j}^{p}, h_{k}^{p}, w_{k}^{p}] @f$
+    */
+    void transform_bbox_predictions(std::vector<std::vector<std::vector<Dtype>
+    > > *anchors_preds_, std::vector<std::vector<Dtype> > *anchors_values_,
+    std::vector<std::vector<std::vector<Dtype> > > *transformed_bbox_preds_);
+
+    // Rest of the variables to be used during backpropagation
+    std::vector<int> batch_num_objs_;
+    std::vector<std::vector<std::vector<Dtype> > > gtruth_, min_max_gtruth_;
+    std::vector<std::vector<std::vector<float> > > iou_;
+
+    // Final class specific probability data
+    std::vector<std::vector<std::vector<Dtype> > > final_prob_;
+    // Final conf score
+    std::vector<std::vector<Dtype> > final_conf_;
+    std::vector<std::vector<std::vector<std::vector<Dtype> > > > gtruth_inv_;
 };
 
 }  // namespace caffe
