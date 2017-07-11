@@ -191,27 +191,40 @@ void BboxDataLayer<Dtype>::load_batch(Batch<Dtype>* batch) {
     }
   }
 
-  // Reshape the label blob to accomodate all the labels
-  int total_batch_objs = 0;
-  for (int i = 0; i < batch_bboxs.size(); ++i) {
-      total_batch_objs += (batch_bboxs[i].size() * 5);
+  // Get the batch index which has the maximum number of objects
+  int max_objs = -1;
+  for (size_t i = 0; i < batch_bboxs.size(); ++i) {
+    if ((int)batch_bboxs[i].size() > max_objs) {
+      max_objs = static_cast<int>(batch_bboxs[i].size());
+    }
   }
+
   vector<int> label_shape_;
-  label_shape_.push_back(total_batch_objs + batch_bboxs.size());
-  label_shape_.push_back(1);
+  label_shape_.push_back(batch_bboxs.size());
+  label_shape_.push_back(max_objs * 5);
   label_shape_.push_back(1);
   label_shape_.push_back(1);
   batch->label_.Reshape(label_shape_);
   Dtype* prefetch_label = batch->label_.mutable_cpu_data();
-  for (int i = 0, idx = 0; i < batch_bboxs.size(); ++i, ++idx) {
-      prefetch_label[idx] = batch_bboxs[i].size();
-      for (int j = 0; j < batch_bboxs[i].size(); ++j) {
-          prefetch_label[++idx] = batch_bboxs[i][j].xmin;
-          prefetch_label[++idx] = batch_bboxs[i][j].ymin;
-          prefetch_label[++idx] = batch_bboxs[i][j].xmax;
-          prefetch_label[++idx] = batch_bboxs[i][j].ymax;
-          prefetch_label[++idx] = batch_bboxs[i][j].class_idx;
+  for (int i = 0; i < batch_bboxs.size(); ++i) {
+    for (int j = 0, k = 0; k < max_objs * 5; ++j) {
+      if (j < batch_bboxs[i].size()) {
+        prefetch_label[i * max_objs * 5 + k + 0] = \
+                static_cast<int>(batch_bboxs[i][j].xmin);
+        prefetch_label[i * max_objs * 5 + k + 1] = \
+                static_cast<int>(batch_bboxs[i][j].ymin);
+        prefetch_label[i * max_objs * 5 + k + 2] = \
+                static_cast<int>(batch_bboxs[i][j].xmax);
+        prefetch_label[i * max_objs * 5 + k + 3] = \
+                static_cast<int>(batch_bboxs[i][j].ymax);
+        prefetch_label[i * max_objs * 5 + k + 4] = \
+                static_cast<int>(batch_bboxs[i][j].class_idx);
+        k += 5;
+      } else {
+        prefetch_label[i * max_objs * 5 + k] = -1;
+        ++k;
       }
+    }
   }
 
   batch_timer.Stop();
