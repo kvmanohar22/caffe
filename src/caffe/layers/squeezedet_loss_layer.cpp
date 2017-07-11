@@ -204,6 +204,39 @@ void SqueezeDetLossLayer<Dtype>::Reshape(
     const vector<Blob<Dtype>*>& bottom, const vector<Blob<Dtype>*>& top) {
   LossLayer<Dtype>::Reshape(bottom, top);
   N = bottom[0]->shape(0);
+  softmax_layer_->Reshape(softmax_bottom_vec_, softmax_top_vec_);
+  reshape_softmax_layer_->Reshape(reshape_softmax_bottom_vec_, reshape_softmax_top_vec_);
+  softmax_axis_ =
+      bottom[0]->CanonicalAxisIndex(this->layer_param_.softmax_param().axis());
+  sigmoid_layer_->Reshape(sigmoid_bottom_vec_, sigmoid_top_vec_);
+  reshape_sigmoid_layer_->Reshape(reshape_sigmoid_bottom_vec_, reshape_sigmoid_top_vec_);
+  reshape_bbox_layer_->Reshape(reshape_bbox_bottom_vec_, reshape_bbox_top_vec_);
+}
+
+template <typename Dtype>
+void SqueezeDetLossLayer<Dtype>::Forward_cpu(
+    const vector<Blob<Dtype>*>& bottom, const vector<Blob<Dtype>*>& top) {
+
+  // Calculate the number of objects to normalize the regression loss
+  batch_num_objs_.clear();
+  const Dtype* label_data = bottom[1]->cpu_data();
+  for (size_t batch = 0; batch < N; ++batch) {
+    bool flag = false;
+    for (size_t j = 0; j < bottom[1]->count() / bottom[1]->shape(0);) {
+      if (label_data[batch * bottom[1]->shape(1) + j] == -1) {
+        batch_num_objs_.push_back(j / 5);
+        flag = true;
+        break;
+      }
+      j += 5;
+    }
+    if (!flag) {
+      batch_num_objs_.push_back(bottom[1]->shape(1) / 5);
+    }
+    DCHECK_GE(batch_num_objs_[batch], 0);
+  }
+  CHECK_EQ(batch_num_objs_.size(), N);
+
   // Reshape vectors as per the batch size
   gtruth_inv_.resize(N);
   for (size_t batch = 0; batch < N; ++batch) {
@@ -237,38 +270,6 @@ void SqueezeDetLossLayer<Dtype>::Reshape(
       min_max_gtruth_[i][j].resize(5);
     }
   }
-  softmax_layer_->Reshape(softmax_bottom_vec_, softmax_top_vec_);
-  reshape_softmax_layer_->Reshape(reshape_softmax_bottom_vec_, reshape_softmax_top_vec_);
-  softmax_axis_ =
-      bottom[0]->CanonicalAxisIndex(this->layer_param_.softmax_param().axis());
-  sigmoid_layer_->Reshape(sigmoid_bottom_vec_, sigmoid_top_vec_);
-  reshape_sigmoid_layer_->Reshape(reshape_sigmoid_bottom_vec_, reshape_sigmoid_top_vec_);
-  reshape_bbox_layer_->Reshape(reshape_bbox_bottom_vec_, reshape_bbox_top_vec_);
-}
-
-template <typename Dtype>
-void SqueezeDetLossLayer<Dtype>::Forward_cpu(
-    const vector<Blob<Dtype>*>& bottom, const vector<Blob<Dtype>*>& top) {
-
-  // Calculate the number of objects to normalize the regression loss
-  batch_num_objs_.clear();
-  const Dtype* label_data = bottom[1]->cpu_data();
-  for (size_t batch = 0; batch < N; ++batch) {
-    bool flag = false;
-    for (size_t j = 0; j < bottom[1]->count() / bottom[1]->shape(0);) {
-      if (label_data[batch * bottom[1]->shape(1) + j] == -1) {
-        batch_num_objs_.push_back(j / 5);
-        flag = true;
-        break;
-      }
-      j += 5;
-    }
-    if (!flag) {
-      batch_num_objs_.push_back(bottom[1]->shape(1) / 5);
-    }
-    DCHECK_GE(batch_num_objs_[batch], 0);
-  }
-  CHECK_EQ(batch_num_objs_.size(), N);
 
   // separate out the class probability specific values from the input blob
   Dtype* softmax_layer_data_ = softmax_input_vec_->mutable_cpu_data();
@@ -657,8 +658,10 @@ void SqueezeDetLossLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
               Dtype _grad;
               if (ch < anchors_per_grid * classes_) {
                 // GRADIENTS FOR CROSS ENTROPY LOSS
-                const int anchor_idx = (height * W + width) * anchors_per_grid
-                     + (ch % classes_);
+                const int anchor_idx =
+                     (height * W + width) * anchors_per_grid + (ch / classes_);
+                DCHECK_GE(anchor_idx, 0);
+                DCHECK_LT(anchor_idx, anchors_);
                 if (anchor_idx == max_iou_indx) {
                   const int class_id = ch % classes_;
                   Dtype class_prob_val_ =
@@ -675,21 +678,35 @@ void SqueezeDetLossLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
               } else if (ch >= anchors_per_grid * classes_ &&
                          ch < anchors_per_grid * (classes_ + 1)) {
                 // GRADIENTS FOR CLASS REGRESSION LOSS
-                const int anchor_idx = (height * W + width) * anchors_per_grid
-                     + (ch % (anchors_per_grid * classes_ + 1));
+                const int anchor_idx = (height * W + width) * anchors_per_grid \
+                     + (ch % (anchors_per_grid * classes_));
+                DCHECK_GE(anchor_idx, 0);
+                DCHECK_LT(anchor_idx, anchors_);
+                Dtype conf_score_pred = final_conf_[batch][anchor_idx];
+                Dtype conf_score_truth = iou_[batch][obj][anchor_idx];
                 if (anchor_idx == max_iou_indx) {
-                  // TODO : Compute gradients
-                  _grad = 0;
+                  _grad = ((2 * pos_conf_) / (batch_num_objs_[batch])) * \
+                          (conf_score_pred - conf_score_truth);
                 } else {
-                  _grad = 0;
+                  _grad = ((2 * neg_conf_) / (anchors_ - \
+                          batch_num_objs_[batch])) * conf_score_pred;
                 }
               } else {
                 // GRADIENTS FOR BBOX REGRESSION LOSS
                 const int anchor_idx = (height * W + width) * anchors_per_grid
-                     + (ch % (anchors_per_grid * (classes_ + 1) + 4));
+                     + (ch - anchors_per_grid * (classes_ + 1)) / 4;
+                DCHECK_GE(anchor_idx, 0);
+                DCHECK_LT(anchor_idx, anchors_);
+                const int bbox_idx =
+                     (ch - anchors_per_grid * (classes_ + 1)) % 4;
+                DCHECK_LT(bbox_idx, 4);
                 if (anchor_idx == max_iou_indx) {
-                  // TODO : Compute gradients
-                  _grad = 0;
+                  Dtype delta_pred =
+                       anchors_preds_[batch][anchor_idx][bbox_idx];
+                  Dtype delta_truth =
+                       gtruth_inv_[batch][obj][anchor_idx][bbox_idx];
+                  _grad = ((2 * lambda_bbox_) / batch_num_objs_[batch]) * \
+                          (delta_pred - delta_truth);
                 } else {
                   _grad = 0;
                 }
@@ -700,6 +717,9 @@ void SqueezeDetLossLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
         }
       }
     }
+    // TODO : Use normalization parameter from protobuf
+    Dtype loss_weight = top[0]->cpu_diff()[0] / N;
+    caffe::caffe_scal(bottom[0]->count(), loss_weight, bottom_diff);
   }
 }
 

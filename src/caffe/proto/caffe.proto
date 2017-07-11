@@ -1172,6 +1172,8 @@ message SqueezeDetLossParameter {
   required int32 lambda_bbox = 7;
   // a value to ensure that `union` of two rectangles is not zero
   optional double epsilon = 8 [default = 1e-7];
+  // bias value to weigh in class regression loss
+  optional int32 lambda_conf = 9 [default = 1];
 }
 
 message TanHParameter {
