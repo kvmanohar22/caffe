@@ -44,6 +44,7 @@ class SqueezeDetLossLayer : public LossLayer<Dtype> {
 
   virtual inline const char* type() const { return "SqueezeDetLoss"; }
   virtual inline int ExactNumTopBlobs() const { return -1; }
+  virtual inline int ExactNumBottomBlobs() const { return 4; }
   virtual inline int MinTopBlobs() const { return 1; }
   virtual inline int MaxTopBlobs() const { return 2; }
 
@@ -56,56 +57,6 @@ class SqueezeDetLossLayer : public LossLayer<Dtype> {
       const vector<bool>& propagate_down, const vector<Blob<Dtype>*>& bottom);
   virtual void Backward_gpu(const vector<Blob<Dtype>*>& top,
       const vector<bool>& propagate_down, const vector<Blob<Dtype>*>& bottom);
-
-  // Apply softmax activation to get class specific probability distribution
-  // @f$ Pr(class_{c} \mid Object), c \in [1, C] @f$
-  int batch_tot_class_probs;
-  vector<int> softmax_layer_shape_;
-  Dtype* softmax_layer_data_;
-  shared_ptr<Layer<Dtype> > softmax_layer_;
-  shared_ptr<Layer<Dtype> > reshape_softmax_layer_;
-  // Store the class specific probability predictions from the SoftmaxLayer
-  Blob<Dtype> probs_;
-  Blob<Dtype> reshape_probs_;
-  // bottom vector holder which is used to call SoftmaxLayer::Forward
-  vector<Blob<Dtype>* > softmax_bottom_vec_;
-  vector<Blob<Dtype>* > reshape_softmax_bottom_vec_;
-  // top vector holder which is used to call SoftmaxLayer::Forward
-  vector<Blob<Dtype>* > softmax_top_vec_;
-  vector<Blob<Dtype>* > reshape_softmax_top_vec_;
-  // values which correspond to class probability from ConvDet output
-  Blob<Dtype>* softmax_input_vec_;
-
-  // Apply sigmoid activation to get the confidence score
-  // @f$ Pr(Object) @f$
-  int batch_tot_conf_scores;
-  vector<int> sigmoid_layer_shape_;
-  Dtype* sigmoid_layer_data_;
-  shared_ptr<Layer<Dtype> > sigmoid_layer_;
-  shared_ptr<Layer<Dtype> > reshape_sigmoid_layer_;
-  // Store the confidence score from the SigmoidLayer
-  Blob<Dtype> conf_;
-  Blob<Dtype> reshape_conf_;
-  // bottom vector holder which is used to call SigmoidLayer::Forward
-  vector<Blob<Dtype>* > sigmoid_bottom_vec_;
-  vector<Blob<Dtype>* > reshape_sigmoid_bottom_vec_;
-  // top vector holder which is used to call SigmoidLayer::Forward
-  vector<Blob<Dtype>* > sigmoid_top_vec_;
-  vector<Blob<Dtype>* > reshape_sigmoid_top_vec_;
-  // values which correspond to confidence score from ConvDet output
-  Blob<Dtype>* sigmoid_input_vec_;
-
-  // Extract the relative bounding box coordinates
-  // @f$ [\delta x_{ijk}, \delta y_{ijk}, \delta w_{ijk}, \delta h_{ijk}] @f$
-  int batch_tot_rel_coord;
-  vector<int> rel_coord_layer_shape_;
-  Dtype* rel_coord_data_;
-  shared_ptr<Layer<Dtype> > reshape_bbox_layer_;
-  // Store the relative coordinates predicted from the layer
-  Blob<Dtype>* relative_coord_vec_;
-  Blob<Dtype> reshape_coord_vec_;
-  vector<Blob<Dtype>* > reshape_bbox_bottom_vec_;
-  vector<Blob<Dtype>* > reshape_bbox_top_vec_;
 
   // Mode of normalization
   LossParameter_NormalizationMode normalization_;
@@ -241,7 +192,6 @@ class SqueezeDetLossLayer : public LossLayer<Dtype> {
     // Final class specific probability data
     std::vector<std::vector<std::vector<Dtype> > > final_prob_;
     // Final conf score
-    std::vector<std::vector<Dtype> > final_conf_;
     std::vector<std::vector<std::vector<std::vector<Dtype> > > > gtruth_inv_;
 };
 
