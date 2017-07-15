@@ -92,7 +92,6 @@ void BboxDataLayer<Dtype>::DataLayerSetUp(const vector<Blob<Dtype>*>& bottom,
   bbox_shape.push_back(1);
   vector<single_object> bbox_;
   infer_bbox_shape(root_folder + lines_[lines_id_].second, &bbox_);
-  bbox_shape[0] = bbox_.size() * 5 + 1;
   top[1]->Reshape(bbox_shape);
   for (int i = 0; i < this->prefetch_.size(); ++i) {
       this->prefetch_[i]->label_.Reshape(bbox_shape);

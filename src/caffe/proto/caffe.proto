@@ -1196,7 +1196,7 @@ message SqueezeDetLossParameter {
     CAFFE = 1;
     CUDNN = 2;
   }
-  optional Engine engine = 1 [default = DEFAULT];
+  optional Engine engine = 1 [default = CAFFE];
 
   // The number of classes an object is to be classified
   required uint32 classes = 2;

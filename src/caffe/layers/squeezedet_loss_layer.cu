@@ -25,6 +25,12 @@ __global__ void SqueezedetlossBackwardGPU(const int nthreads, const Dtype* top,
           const Dtype* label, Dtype* bottom_diff, const int num, const int dim,
           const int spatial_dim, const bool has_ignore_label_,
           const int ignore_label, Dtype* counts) {
+
+            std::fstream file;
+            file.open("/users/TeamVideoSummarization/gsoc/dev/caffe/obj_debug_gpu.log", std::fstream::app);
+            file << "here" << std::endl;
+            file.close();
+
 }
 
 template <typename Dtype>

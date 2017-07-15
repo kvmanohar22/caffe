@@ -14,6 +14,11 @@ void  SqueezeDetLossLayer<Dtype>::LayerSetUp(
     const vector<Blob<Dtype>*>& bottom, const vector<Blob<Dtype>*>& top) {
   LossLayer<Dtype>::LayerSetUp(bottom, top);
 
+  std::fstream file;
+  file.open("/users/TeamVideoSummarization/gsoc/dev/caffe/obj_debug_set.log", std::fstream::app);
+  file << "here" << std::endl;
+  file.close();
+
   if (!this->layer_param_.loss_param().has_normalization() &&
       this->layer_param_.loss_param().has_normalize()) {
     normalization_ = this->layer_param_.loss_param().normalize() ?
@@ -218,6 +223,11 @@ void SqueezeDetLossLayer<Dtype>::Forward_cpu(
     const vector<Blob<Dtype>*>& bottom, const vector<Blob<Dtype>*>& top) {
 
   // Calculate the number of objects to normalize the regression loss
+  std::fstream file;
+  file.open("/users/TeamVideoSummarization/gsoc/dev/caffe/obj_debug.log", std::fstream::app);
+  file << "here" << std::endl;
+  file.close();
+
   batch_num_objs_.clear();
   const Dtype* label_data = bottom[1]->cpu_data();
   for (size_t batch = 0; batch < N; ++batch) {
@@ -494,19 +504,26 @@ void SqueezeDetLossLayer<Dtype>::Forward_cpu(
     bbox_reg_loss.push_back((l * lambda_bbox_) / (batch_num_objs_[batch]));
   }
 
+  std::fstream f;
+  f.open("/users/TeamVideoSummarization/gsoc/dev/caffe/obj_debug.log", std::fstream::app);
   for (typename std::vector<Dtype>::iterator itr = class_reg_loss.begin();
       itr != class_reg_loss.end(); ++itr) {
     loss += (*itr);
   }
+  f << "class reg loss: " << loss << std::endl;
   for (typename std::vector<Dtype>::iterator itr = conf_reg_loss.begin();
       itr != conf_reg_loss.end(); ++itr) {
     loss += (*itr);
   }
+  f << "conf reg loss: " << loss << std::endl;
   for (typename std::vector<Dtype>::iterator itr = bbox_reg_loss.begin();
       itr != bbox_reg_loss.end(); ++itr) {
     loss += (*itr);
   }
+  f << "bbox reg loss: " << loss << std::endl;
   // TODO : Use normalization param from protobuf message to normalize loss
+  f << "Total normalized loss: " << loss << std::endl;
+  f.close();
   top[0]->mutable_cpu_data()[0] = loss / N;
 }
 
