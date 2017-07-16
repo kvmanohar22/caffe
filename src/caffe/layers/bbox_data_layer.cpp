@@ -87,7 +87,7 @@ void BboxDataLayer<Dtype>::DataLayerSetUp(const vector<Blob<Dtype>*>& bottom,
   // bbox
   vector<int> bbox_shape;
   bbox_shape.push_back(batch_size);
-  bbox_shape.push_back(1);
+  bbox_shape.push_back(100);
   bbox_shape.push_back(1);
   bbox_shape.push_back(1);
   vector<single_object> bbox_;

@@ -127,6 +127,8 @@ template <typename Dtype>
 void SqueezeDetLossLayer<Dtype>::Forward_cpu(
     const vector<Blob<Dtype>*>& bottom, const vector<Blob<Dtype>*>& top) {
 
+  std::vector<std::vector<std::vector<Dtype> > > final_prob_;
+
   const Dtype* class_scores = bottom[0]->cpu_data();
   const Dtype* conf_scores  = bottom[1]->cpu_data();
   const Dtype* delta_bbox   = bottom[2]->cpu_data();
@@ -162,13 +164,7 @@ void SqueezeDetLossLayer<Dtype>::Forward_cpu(
       }
     }
   }
-  final_prob_.resize(N);
-  for (size_t batch = 0; batch < N; ++batch) {
-    final_prob_[batch].resize(anchors_);
-    for (size_t anchor = 0; anchor < anchors_; ++anchor) {
-      final_prob_[batch][anchor].resize(classes_);
-    }
-  }
+
   iou_.resize(N);
   gtruth_.resize(N);
   min_max_gtruth_.resize(N);
@@ -183,8 +179,8 @@ void SqueezeDetLossLayer<Dtype>::Forward_cpu(
     }
   }
 
-
-
+  CHECK_EQ(bottom[3]->count(), N * 5 * (*std::max_element(batch_num_objs_.begin(),
+    batch_num_objs_.end())));
   // Extract bounding box data from batch of images
   for (size_t batch = 0; batch < N; ++batch) {
     for (size_t obj = 0; obj < batch_num_objs_[batch]; ++obj) {
@@ -401,26 +397,19 @@ void SqueezeDetLossLayer<Dtype>::Forward_cpu(
     bbox_reg_loss.push_back((l * lambda_bbox_) / (batch_num_objs_[batch]));
   }
 
-  std::fstream f;
-  f.open("/users/TeamVideoSummarization/gsoc/dev/caffe/obj_debug.log", std::fstream::app);
   for (typename std::vector<Dtype>::iterator itr = class_reg_loss.begin();
       itr != class_reg_loss.end(); ++itr) {
     loss += (*itr);
   }
-  f << "class reg loss: " << loss << std::endl;
   for (typename std::vector<Dtype>::iterator itr = conf_reg_loss.begin();
       itr != conf_reg_loss.end(); ++itr) {
     loss += (*itr);
   }
-  f << "conf reg loss: " << loss << std::endl;
   for (typename std::vector<Dtype>::iterator itr = bbox_reg_loss.begin();
       itr != bbox_reg_loss.end(); ++itr) {
     loss += (*itr);
   }
-  f << "bbox reg loss: " << loss << std::endl;
   // TODO : Use normalization param from protobuf message to normalize loss
-  f << "Total normalized loss: " << loss << std::endl;
-  f.close();
   top[0]->mutable_cpu_data()[0] = loss / N;
 }
 
@@ -581,7 +570,7 @@ void SqueezeDetLossLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
               DCHECK_LT(label_value, classes_);
               if (label_value == id) {
                 _grad = \
-                  1.0 / class_scores[(batch * anchors_ + \
+                  -1.0 / class_scores[(batch * anchors_ + \
                   anchor) * classes_ + id];
               } else {
                 _grad = 0;
@@ -590,7 +579,7 @@ void SqueezeDetLossLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
               _grad = 0;
             }
             bottom_class_diff[(batch * anchors_ + \
-              anchor) * classes_ + id] += _grad;
+              anchor) * classes_ + id] += 0;
           }
         }
       }
@@ -627,7 +616,7 @@ void SqueezeDetLossLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
     }
     // GRADIENTS FOR BBOX REGRESSION LOSS
     for (size_t batch = 0; batch < N; ++batch) {
-      for (size_t obj = 0; obj < batch_num_objs_[batch]; ++batch) {
+      for (size_t obj = 0; obj < batch_num_objs_[batch]; ++obj) {
         const int max_iou_indx = std::max_element(iou_[batch][obj].begin(),
           iou_[batch][obj].end()) - iou_[batch][obj].begin();
         DCHECK_GE(max_iou_indx, 0);
@@ -639,23 +628,53 @@ void SqueezeDetLossLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
                 (height * W + width) * anchors_per_grid + (id / 4);
               DCHECK_GE(anchor_idx, 0);
               DCHECK_LT(anchor_idx, anchors_);
-              for (size_t bbox_id = 0; bbox_id < 4; ++bbox_id) {
-                if (anchor_idx == max_iou_indx) {
-                  Dtype delta_pred = \
-                    delta_bbox[((batch * H + height) * W + \
-                    width) * anchors_per_grid * 4 + id + bbox_id];
-                  Dtype delta_truth = \
-                    gtruth_inv_[batch][obj][anchor_idx][bbox_id];
-                  _grad = ((2 * lambda_bbox_) / batch_num_objs_[batch]) * \
-                          (delta_pred - delta_truth);
-                } else {
-                  _grad = 0;
-                }
-                bottom_bbox_diff[((batch * H + height) * W + \
-                  width) * anchors_per_grid * 4 + id + \
-                  bbox_id] = _grad;
+              Dtype _grad_x, _grad_y, _grad_w, _grad_h;
+              Dtype delta_pred, delta_truth;
+              if (anchor_idx == max_iou_indx) {
+                delta_pred = \
+                  delta_bbox[((batch * H + height) * W + \
+                  width) * anchors_per_grid * 4 + id + 0];
+                delta_truth = \
+                  gtruth_inv_[batch][obj][anchor_idx][0];
+                _grad_x = ((2 * lambda_bbox_) / batch_num_objs_[batch]) * \
+                  (delta_pred - delta_truth);
+                delta_pred = \
+                  delta_bbox[((batch * H + height) * W + \
+                  width) * anchors_per_grid * 4 + id + 1];
+                delta_truth = \
+                  gtruth_inv_[batch][obj][anchor_idx][1];
+                _grad_y = ((2 * lambda_bbox_) / batch_num_objs_[batch]) * \
+                  (delta_pred - delta_truth);
+                delta_pred = \
+                  delta_bbox[((batch * H + height) * W + \
+                  width) * anchors_per_grid * 4 + id + 2];
+                delta_truth = \
+                  gtruth_inv_[batch][obj][anchor_idx][2];
+                _grad_w = ((2 * lambda_bbox_) / batch_num_objs_[batch]) * \
+                  (delta_pred - delta_truth);
+                delta_pred = \
+                  delta_bbox[((batch * H + height) * W + \
+                  width) * anchors_per_grid * 4 + id + 3];
+                delta_truth = \
+                  gtruth_inv_[batch][obj][anchor_idx][3];
+                _grad_h = ((2 * lambda_bbox_) / batch_num_objs_[batch]) * \
+                  (delta_pred - delta_truth);
+              } else {
+                _grad_x = 0;_grad_y = 0; _grad_w = 0;_grad_h = 0;
               }
-              id += 4;
+              bottom_bbox_diff[((batch * H + height) * W + \
+                 width) * anchors_per_grid * 4 + id +\
+                 0] += _grad_x;
+              bottom_bbox_diff[((batch * H + height) * W + \
+                 width) * anchors_per_grid * 4 + id +\
+                 1] += _grad_y;
+              bottom_bbox_diff[((batch * H + height) * W + \
+                 width) * anchors_per_grid * 4 + id +\
+                 2] += _grad_w;
+              bottom_bbox_diff[((batch * H + height) * W + \
+                 width) * anchors_per_grid * 4 + id +\
+                 3] += _grad_h;
+               id += 4;
             }
           }
         }
@@ -669,7 +688,6 @@ void SqueezeDetLossLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
   } else {
     LOG(FATAL) << "Should backpropagate to all the input blobs except labels.";
   }
-
 }
 
 #ifdef CPU_ONLY

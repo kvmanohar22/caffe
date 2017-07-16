@@ -51,11 +51,7 @@ class SqueezeDetLossLayer : public LossLayer<Dtype> {
  protected:
   virtual void Forward_cpu(const vector<Blob<Dtype>*>& bottom,
       const vector<Blob<Dtype>*>& top);
-  virtual void Forward_gpu(const vector<Blob<Dtype>*>& bottom,
-      const vector<Blob<Dtype>*>& top);
   virtual void Backward_cpu(const vector<Blob<Dtype>*>& top,
-      const vector<bool>& propagate_down, const vector<Blob<Dtype>*>& bottom);
-  virtual void Backward_gpu(const vector<Blob<Dtype>*>& top,
       const vector<bool>& propagate_down, const vector<Blob<Dtype>*>& bottom);
 
   // Mode of normalization
@@ -190,7 +186,7 @@ class SqueezeDetLossLayer : public LossLayer<Dtype> {
     std::vector<std::vector<std::vector<float> > > iou_;
 
     // Final class specific probability data
-    std::vector<std::vector<std::vector<Dtype> > > final_prob_;
+
     // Final conf score
     std::vector<std::vector<std::vector<std::vector<Dtype> > > > gtruth_inv_;
 };
