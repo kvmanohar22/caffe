@@ -1219,6 +1219,8 @@ message SqueezeDetLossParameter {
   optional double epsilon = 8 [default = 1e-7];
   // bias value to weigh in class regression loss
   optional int32 lambda_conf = 9 [default = 1];
+  // The number of top predictions for bounding boxes to keep while test phase
+  optional int32 top_preds = 10 [default = 64];
 }
 
 message TanHParameter {

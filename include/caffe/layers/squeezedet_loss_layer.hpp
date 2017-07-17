@@ -16,14 +16,18 @@
 
 namespace caffe {
 
+// TODO @kvmanohar : Add detailed documentation
 /**
  *@brief Computes the regression based loss which is specific to object
  *       detection task.
  *       The details of this loss function are outlined in the paper:
  *       `https://arxiv.org/abs/1612.01051`
  *
- *@param bottom input Blob vector (length 2)
+ *@param bottom input Blob vector (length 4)
+ *    -# @f$ (N \times anchors_ \times C) @f$
  *    -# @f$ (N \times H \times W \times C) @f$
+ *    -# @f$ (N \times H \times W \times C) @f$
+ *    -# @f$ (N \times H \times 1 \times 1) @f$
  */
 
 typedef struct {
@@ -65,6 +69,7 @@ class SqueezeDetLossLayer : public LossLayer<Dtype> {
     * - pos_conf_ : @f$ \lambda_{conf}^{+} @f$
     * - neg_conf_ : @f$ \lambda_{conf}^{-} @f$
     * - lambda_bbox_ : @f$ \lambda_{bbox} @f$
+    * - lambda_conf : @f$ \lambda_{conf} @f$
     * - anchors_ : The total number of anchors predicted
     *              `H * W * anchors_per_grid`
     */
@@ -75,28 +80,13 @@ class SqueezeDetLossLayer : public LossLayer<Dtype> {
   int lambda_bbox_;
   int lambda_conf;
   int anchors_;
+  int top_preds;
 
   // Anchor shape of the form
   // @f$ [anchors_, 4] @f$ where `4` values are as follows:
   // @f$ [\hat{x_{i}}, \hat{y_{j}}, \hat{h_{k}}, \hat{w_{k}}] @f$
   std::vector<std::vector<Dtype> > anchors_values_;
-
-  // Anchors predictions from the `ConvDet` layer which are of shape:
-  // @f$ [N, anchors_, 4] @f$ where the `4` values are as follows:
-  // @f$ [delta x_{ijk}, delta y_{ijk}, delta h_{ijk}, delta w_{ijk}] @f$
-  std::vector<std::vector<std::vector<Dtype> > > anchors_preds_;
-
-  // Transformed  `ConvDet` predictions to bounding boxes which are of shape:
-  // @f$ [N, anchors_, 4] @f$ where the `4` values are as follows:
-  // @f$ [center_x, center_y, anchor_height, anchor_width] @f$
-  std::vector<std::vector<std::vector<Dtype> > > transformed_bbox_preds_;
-
-  // Transformed predicted bounding boxes from:
-  // @f$ [N, anchors_, 4] @f$ where the `4` values are as follows:
-  // @f$ [center_x, center_y, anchor_height, anchor_width] @f$ to
-  // @f$ [N, anchors_, 4] @f$ where the `4` values are as follows:
-  // @f$ [xmin, ymin, xmax, ymax] @f$
-  std::vector<std::vector<std::vector<Dtype> > > min_max_pred_bboxs_;
+  std::vector<int> batch_num_objs_;
 
   // Details pertaining to the bottom blob aka output of `ConvDet layer`
   // channels, width, height
@@ -162,9 +152,10 @@ class SqueezeDetLossLayer : public LossLayer<Dtype> {
     *  @f$ h_{k}^{p} = \hat{h_{k}} \exp{(\delta h_{ijk})} @f$
     *  @f$ w_{k}^{p} = \hat{w_{k}} \exp{(\delta w_{ijk})} @f$
     *
-    * @param anchors_preds_ : [N, anchors_, 4]
+    * @param delta_bbox : [N, H, W, anchors_per_grid \times 4]
     *   - N        : batch_size
-    *   - anchors_ : the total number of anchors `H * W * anchors_per_grid`
+    *   - H        : Height of activation map
+    *   - W        : Width of activation map
     *   - 4        : @f$ [\delta x_{ijk}, \delta y_{ijk},
     *                     \delta h_{ijk}, \delta w_{ijk}] @f$
     * @param anchors_values_ : [anchors_, 4]
@@ -176,19 +167,11 @@ class SqueezeDetLossLayer : public LossLayer<Dtype> {
     *   - anchors_ : the total number of anchors `H * W * anchors_per_grid`
     *   - 4        : @f$ [x_{i}^{p}, y_{j}^{p}, h_{k}^{p}, w_{k}^{p}] @f$
     */
-    void transform_bbox_predictions(std::vector<std::vector<std::vector<Dtype>
-    > > *anchors_preds_, std::vector<std::vector<Dtype> > *anchors_values_,
+    void transform_bbox_predictions(const Dtype* delta_bbox,
+    std::vector<std::vector<Dtype> > *anchors_values_,
     std::vector<std::vector<std::vector<Dtype> > > *transformed_bbox_preds_);
 
-    // Rest of the variables to be used during backpropagation
-    std::vector<int> batch_num_objs_;
-    std::vector<std::vector<std::vector<Dtype> > > gtruth_, min_max_gtruth_;
-    std::vector<std::vector<std::vector<float> > > iou_;
-
-    // Final class specific probability data
-
-    // Final conf score
-    std::vector<std::vector<std::vector<std::vector<Dtype> > > > gtruth_inv_;
+    void assert_predictions(std::vector<std::vector<std::vector<Dtype> > > *min_max_pred_bboxs_);
 };
 
 }  // namespace caffe
