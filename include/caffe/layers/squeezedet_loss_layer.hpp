@@ -80,7 +80,8 @@ class SqueezeDetLossLayer : public LossLayer<Dtype> {
   int lambda_bbox_;
   int lambda_conf;
   int anchors_;
-  int top_preds;
+  int n_top_detections;
+  float intersection_thresh;
 
   // Anchor shape of the form
   // @f$ [anchors_, 4] @f$ where `4` values are as follows:
@@ -120,6 +121,8 @@ class SqueezeDetLossLayer : public LossLayer<Dtype> {
     void intersection_over_union(std::vector<std::vector<std::vector<Dtype> > >
     *predicted_bboxs_, std::vector<std::vector<std::vector<Dtype> > >
     *min_max_gtruth_, std::vector<std::vector<std::vector<float> > > *iou_);
+    void intersection_over_union(std::vector<std::vector<Dtype> > *boxes,
+    std::vector<Dtype> *base_box, std::vector<float> *iou_);
 
    /**
     * @brief Do the inverse transformation of the ground truth data
@@ -172,6 +175,37 @@ class SqueezeDetLossLayer : public LossLayer<Dtype> {
     std::vector<std::vector<std::vector<Dtype> > > *transformed_bbox_preds_);
 
     void assert_predictions(std::vector<std::vector<std::vector<Dtype> > > *min_max_pred_bboxs_);
+
+    /**
+     * @brief Apply non-maximal supression and filter out the bboxes
+     *
+     * @param boxes : [J, 4]
+     *   - J        : Number of per class boxes
+     *   - 4        : @f$ [x_{i}^{p}, y_{j}^{p}, h_{k}^{p}, w_{k}^{p}] @f$
+     * @param probs : [J]
+     *   - J        : Number of per class boxes
+     * @Returns     : Should we keep the box or not ?
+     */
+    std::vector<bool> non_maximal_suppression(std::vector<std::vector<Dtype> >
+    *boxes, std::vector<Dtype> *probs);
+
+    /**
+    * @brief Apply non-maximal supression and filter out the bboxes
+    *
+    * @param boxes : [anchors_, 4]
+    *   - anchors_ : the total number of anchors `H * W * anchors_per_grid`
+    *   - 4        : @f$ [x_{i}^{p}, y_{j}^{p}, h_{k}^{p}, w_{k}^{p}] @f$
+    * @param probs : [anchors_, classes_]
+    *              : prob(obj) * prob(class | obj)
+    *   - anchors_ : Total number of anchors
+    *   - classes_ : Total number of classes
+    * @param class_idx : [anchors_, 1]
+    *   - anchors_ : Total number of anchors
+    */
+    void filter_predictions(std::vector<std::vector<Dtype> > *boxes,
+    std::vector<std::vector<Dtype> > *probs, std::vector<Dtype> *filtered_probs,
+    std::vector<size_t> *filtered_idxs, std::vector<std::vector<Dtype> >
+    *filtered_boxes);
 };
 
 }  // namespace caffe

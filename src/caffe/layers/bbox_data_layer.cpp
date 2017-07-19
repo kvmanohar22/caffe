@@ -186,6 +186,9 @@ void BboxDataLayer<Dtype>::load_batch(Batch<Dtype>* batch) {
       lines_id_ = 0;
       if (this->layer_param_.bbox_data_param().shuffle()) {
         ShuffleImages();
+        DLOG(INFO) << "Shuffling the dataset.";
+      } else {
+        DLOG(INFO) << "Data is not shuffled after an epoch.";
       }
     }
   }
