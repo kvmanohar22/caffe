@@ -102,8 +102,8 @@ template <typename Dtype>
 void BboxDataLayer<Dtype>::infer_bbox_shape(const string& filename,
      std::vector<single_object>* bbox_) {
   std::ifstream infile(filename.c_str());
-  std::istream_iterator<int> bbox_begin(infile), bbox_end;
-  std::vector<int> bbox(bbox_begin, bbox_end);
+  std::istream_iterator<float> bbox_begin(infile), bbox_end;
+  std::vector<float> bbox(bbox_begin, bbox_end);
   bbox_->clear();
   for (int i = 0; i < bbox.size();) {
     single_object obj;
@@ -228,6 +228,21 @@ void BboxDataLayer<Dtype>::load_batch(Batch<Dtype>* batch) {
       }
     }
   }
+
+  LOG(INFO) << "In Bbox:::: >>>>>>>>>>>>>>";
+  LOG(INFO) << "NUM: " << batch->data_.num();
+  LOG(INFO) << "CHANNELS: " << batch->data_.channels();
+  LOG(INFO) << "HEIGHT: " << batch->data_.height();
+  LOG(INFO) << "WIDTH: " << batch->data_.width();
+
+  for (size_t w = 0; w < 5; ++w) {
+    for (size_t h = 0; h < 5; ++h) {
+  		for (size_t i = 0; i < 3; ++i) {
+    		LOG(INFO) << w << " " << h << " " << i << " :"<<batch->data_.data_at(0, i, w, h);
+  		}
+		}
+	}
+	LOG(INFO) << "DONE !";
 
   batch_timer.Stop();
   DLOG(INFO) << "Prefetch batch: " << batch_timer.MilliSeconds() << " ms.";

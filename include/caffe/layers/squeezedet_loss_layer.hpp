@@ -50,13 +50,17 @@ class SqueezeDetLossLayer : public LossLayer<Dtype> {
   virtual inline int ExactNumTopBlobs() const { return -1; }
   virtual inline int ExactNumBottomBlobs() const { return 4; }
   virtual inline int MinTopBlobs() const { return 1; }
-  virtual inline int MaxTopBlobs() const { return 2; }
+  virtual inline int MaxTopBlobs() const { return 5; }
 
  protected:
   virtual void Forward_cpu(const vector<Blob<Dtype>*>& bottom,
       const vector<Blob<Dtype>*>& top);
   virtual void Backward_cpu(const vector<Blob<Dtype>*>& top,
       const vector<bool>& propagate_down, const vector<Blob<Dtype>*>& bottom);
+  // virtual void Forward_gpu(const vector<Blob<Dtype>*>& bottom,
+  //     const vector<Blob<Dtype>*>& top);
+  // virtual void Backward_gpu(const vector<Blob<Dtype>*>& top,
+  //     const vector<bool>& propagate_down, const vector<Blob<Dtype>*>& bottom);
 
   // Mode of normalization
   LossParameter_NormalizationMode normalization_;
@@ -194,7 +198,7 @@ class SqueezeDetLossLayer : public LossLayer<Dtype> {
     *
     * @param boxes : [anchors_, 4]
     *   - anchors_ : the total number of anchors `H * W * anchors_per_grid`
-    *   - 4        : @f$ [x_{i}^{p}, y_{j}^{p}, h_{k}^{p}, w_{k}^{p}] @f$
+    *   - 4        : @f$ [xmin, ymin, xmax, ymax] @f$
     * @param probs : [anchors_, classes_]
     *              : prob(obj) * prob(class | obj)
     *   - anchors_ : Total number of anchors
@@ -205,7 +209,9 @@ class SqueezeDetLossLayer : public LossLayer<Dtype> {
     void filter_predictions(std::vector<std::vector<Dtype> > *boxes,
     std::vector<std::vector<Dtype> > *probs, std::vector<Dtype> *filtered_probs,
     std::vector<size_t> *filtered_idxs, std::vector<std::vector<Dtype> >
-    *filtered_boxes);
+    *filtered_boxes, const Dtype *conf_scores,
+    std::vector<std::vector<std::vector<float> > > iou_,
+    const Dtype *class_scores);
 };
 
 }  // namespace caffe

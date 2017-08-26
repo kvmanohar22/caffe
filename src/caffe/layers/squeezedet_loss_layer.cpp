@@ -119,6 +119,7 @@ template <typename Dtype>
 void SqueezeDetLossLayer<Dtype>::Forward_cpu(
     const vector<Blob<Dtype>*>& bottom, const vector<Blob<Dtype>*>& top) {
 
+  // LOG(INFO) << "Bbox length: " << bottom[3]->shape(0);
   std::vector<std::vector<std::vector<Dtype> > > final_prob_;
 
   // Transformed  `ConvDet` predictions to bounding boxes which are of shape:
@@ -320,8 +321,8 @@ void SqueezeDetLossLayer<Dtype>::Forward_cpu(
         }
       }
     }
-    conf_reg_loss.push_back((pos_conf_ / batch_num_objs_[batch]) * l1 \
-                          + (neg_conf_ / (anchors_ - batch_num_objs_[batch])) * l2);
+    conf_reg_loss.push_back((float(pos_conf_) / batch_num_objs_[batch]) * l1 \
+                          + (float(neg_conf_) / (anchors_ - batch_num_objs_[batch])) * l2);
   }
 
   // Compute `bounding box regression loss`
@@ -347,19 +348,19 @@ void SqueezeDetLossLayer<Dtype>::Forward_cpu(
               diff_val_x = \
                 delta_bbox[((batch * H + height) * W + \
                 width) * anchors_per_grid * 4 + anchor + 0] \
-                - gtruth_inv_.at(batch).at(obj).at(anchor_idx).at(0);
+                - gtruth_inv_[batch][obj][anchor_idx][0];
               diff_val_y = \
                 delta_bbox[((batch * H + height) * W + \
                 width) * anchors_per_grid * 4 + anchor + 1] \
-                - gtruth_inv_.at(batch).at(obj).at(anchor_idx).at(1);
+                - gtruth_inv_[batch][obj][anchor_idx][1];
               diff_val_h = \
                 delta_bbox[((batch * H + height) * W + \
                 width) * anchors_per_grid * 4 + anchor + 2] \
-                - gtruth_inv_.at(batch).at(obj).at(anchor_idx).at(2);
+                - gtruth_inv_[batch][obj][anchor_idx][2];
               diff_val_w = \
                 delta_bbox[((batch * H + height) * W + \
                 width) * anchors_per_grid * 4 + anchor + 3] \
-                - gtruth_inv_.at(batch).at(obj).at(anchor_idx).at(3);
+                - gtruth_inv_[batch][obj][anchor_idx][3];
               exp_val_x = caffe::caffe_cpu_dot(1, &diff_val_x, &diff_val_x);
               exp_val_y = caffe::caffe_cpu_dot(1, &diff_val_y, &diff_val_y);
               exp_val_h = caffe::caffe_cpu_dot(1, &diff_val_h, &diff_val_h);
@@ -378,35 +379,31 @@ void SqueezeDetLossLayer<Dtype>::Forward_cpu(
       itr != class_reg_loss.end(); ++itr) {
     class_loss += (*itr);
   }
-  // LOG(INFO) << "Class loss: " << class_loss;
   for (typename std::vector<Dtype>::iterator itr = conf_reg_loss.begin();
       itr != conf_reg_loss.end(); ++itr) {
     conf_loss += (*itr);
   }
-  // LOG(INFO) << "Conf loss: " << conf_loss;
   for (typename std::vector<Dtype>::iterator itr = bbox_reg_loss.begin();
       itr != bbox_reg_loss.end(); ++itr) {
     bbox_loss += (*itr);
   }
-  // LOG(INFO) << "Bbox loss: " << bbox_loss;
   tot_loss = class_loss + conf_loss + bbox_loss;
 
-  // Loss
   top[0]->mutable_cpu_data()[0] = tot_loss / N;
-  // Mean Average Precision
 
-  // if (this->phase_ == caffe::TEST) {
-  //   std::vector<std::vector<Dtype> > batch_filtered_probs(N);
-  //   std::vector<std::vector<size_t> > batch_filtered_idxs(N);
-  //   std::vector<std::vector<std::vector<Dtype> > > batch_filtered_boxes(N);
-  //   for (size_t batch = 0; batch < N; ++batch) {
-  //     filter_predictions(&min_max_pred_bboxs_[batch], &final_prob_[batch],
-  //        &batch_filtered_probs[batch], &batch_filtered_idxs[batch],
-  //         &batch_filtered_boxes[batch]);
-  //   }
-  // }
+  if (this->phase_ == caffe::TEST) {
+    std::vector<std::vector<Dtype> > batch_filtered_probs(N);
+    std::vector<std::vector<size_t> > batch_filtered_idxs(N);
+    std::vector<std::vector<std::vector<Dtype> > > batch_filtered_boxes(N);
+
+    for (size_t batch = 0; batch < N; ++batch) {
+     filter_predictions(&min_max_pred_bboxs_[batch], &final_prob_[batch],
+        &batch_filtered_probs[batch], &batch_filtered_idxs[batch],
+        &batch_filtered_boxes[batch], conf_scores, iou_,
+        class_scores);
+    }
+  }
 }
-
 
 template <typename Dtype>
 void SqueezeDetLossLayer<Dtype>::transform_bbox(std::vector<std::vector<
@@ -477,7 +474,6 @@ void SqueezeDetLossLayer<Dtype>::intersection_over_union(std::vector<
             - (*min_max_gtruth_)[batch][obj][1];
         float union_ = w_p * h_p + w_g * h_g - inter_;
 
-        // Don't blow up `IOU`, so adding `epsilon`
         (*iou_)[batch][obj][anchor] = inter_ / (union_ + epsilon);
       }
     }
@@ -612,31 +608,37 @@ void SqueezeDetLossLayer<Dtype>::assert_predictions(
 template <typename Dtype>
 std::vector<bool> SqueezeDetLossLayer<Dtype>::non_maximal_suppression(
     std::vector<std::vector<Dtype> > *boxes, std::vector<Dtype> *probs) {
-  std::vector<bool> keep((*boxes).size());
-  std::fill(keep.begin(), keep.end(), true);
-  std::vector<size_t> prob_args_sorted((*probs).size());
-  std::iota(prob_args_sorted.begin(), prob_args_sorted.end(), 0);
-  std::sort(prob_args_sorted.begin(), prob_args_sorted.end(), \
-    [probs](size_t i1, size_t i2) {return (*probs)[i1] > (*probs)[i2];});
-  for (std::vector<size_t>::iterator itr = prob_args_sorted.begin();
-      itr != prob_args_sorted.end()-1; ++itr) {
-    const int idx = itr - prob_args_sorted.begin();
-    std::vector<float> iou_(prob_args_sorted.size()-idx-1);
-    std::vector<std::vector<Dtype> > temp_boxes(iou_.size());
-    for (size_t bb = 0; bb < temp_boxes.size(); ++bb) {
-      std::vector<Dtype> temp_box(4);
-      for (size_t b = 0; b < 4; ++b) {
-        temp_box[b] = (*boxes)[prob_args_sorted[idx+bb+1]][b];
+  std::vector<bool> keep;
+  if ((*boxes).size() == 0) {
+    keep.resize(0);
+  } else {
+    keep.resize((*boxes).size());
+    std::fill(keep.begin(), keep.end(), true);
+    std::vector<size_t> prob_args_sorted((*probs).size());
+    std::iota(prob_args_sorted.begin(), prob_args_sorted.end(), 0);
+    std::sort(prob_args_sorted.begin(), prob_args_sorted.end(), \
+      [probs](size_t i1, size_t i2) {return (*probs)[i1] > (*probs)[i2];});
+
+    for (std::vector<size_t>::iterator itr = prob_args_sorted.begin();
+        itr != prob_args_sorted.end()-1; ++itr) {
+      const int idx = itr - prob_args_sorted.begin();
+      std::vector<float> iou_(prob_args_sorted.size()-idx-1);
+      std::vector<std::vector<Dtype> > temp_boxes(iou_.size());
+      for (size_t bb = 0; bb < temp_boxes.size(); ++bb) {
+        std::vector<Dtype> temp_box(4);
+        for (size_t b = 0; b < 4; ++b) {
+          temp_box[b] = (*boxes)[prob_args_sorted[idx+bb+1]][b];
+        }
+        temp_boxes[bb] = temp_box;
       }
-      temp_boxes[bb] = temp_box;
-    }
-    intersection_over_union(&temp_boxes, \
-        &(*boxes)[prob_args_sorted[idx]], &iou_);
-    for (std::vector<float>::iterator _itr = iou_.begin();
-        _itr != iou_.end(); ++_itr) {
-      const int iou_idx = _itr - iou_.begin();
-      if (*_itr > intersection_thresh) {
-        keep[prob_args_sorted[idx+iou_idx+1]] = false;
+      intersection_over_union(&temp_boxes, \
+          &(*boxes)[prob_args_sorted[idx]], &iou_);
+      for (std::vector<float>::iterator _itr = iou_.begin();
+          _itr != iou_.end(); ++_itr) {
+        const int iou_idx = _itr - iou_.begin();
+        if (*_itr > intersection_thresh) {
+          keep[prob_args_sorted[idx+iou_idx+1]] = false;
+        }
       }
     }
   }
@@ -647,7 +649,9 @@ template <typename Dtype>
 void SqueezeDetLossLayer<Dtype>::filter_predictions(std::vector<std::vector<
     Dtype> > *boxes, std::vector<std::vector<Dtype> > *probs,
     std::vector<Dtype> *filtered_probs, std::vector<size_t> *filtered_idxs,
-    std::vector<std::vector<Dtype> > *filtered_boxes) {
+    std::vector<std::vector<Dtype> > *filtered_boxes, const Dtype* conf_scores,
+    std::vector<std::vector<std::vector<float> > > iou_,
+    const Dtype* class_scores) {
 
   std::vector<Dtype> max_class_probs((*probs).size());
   std::vector<size_t> args((*probs).size());
@@ -665,11 +669,26 @@ void SqueezeDetLossLayer<Dtype>::filter_predictions(std::vector<std::vector<
     {return max_class_probs[i1] > max_class_probs[i2];});
   std::vector<size_t> top_n_order(args.begin(), \
     args.begin()+n_top_detections);
+
   std::vector<std::vector<Dtype> > top_n_boxes(n_top_detections);
   std::vector<size_t> top_n_idxs(n_top_detections);
   std::vector<Dtype> top_n_probs(n_top_detections);
   for (size_t i = 0; i < n_top_detections; ++i) {
     top_n_boxes[i].resize(4);
+  }
+
+  std::vector<Dtype> dummy_probability;
+  for (size_t b=0; b<N; ++b) {
+    for (size_t h=0; h<H; ++h) {
+      for (size_t w=0; w<W; ++w) {
+        for (size_t k=0; k<9; ++k) {
+          const int anch = ((b*H+h)*W+w)*9+k;
+          DCHECK_LT(anch, anchors_);
+          Dtype _prob_ = conf_scores[anch];
+          dummy_probability.push_back(_prob_);
+        }
+      }
+    }
   }
   for (size_t n = 0; n < n_top_detections; ++n) {
     top_n_probs[n] = max_class_probs[top_n_order[n]];
@@ -680,7 +699,16 @@ void SqueezeDetLossLayer<Dtype>::filter_predictions(std::vector<std::vector<
     for (size_t i = 0; i < 4; ++i) {
       top_n_boxes[n][i] = (*boxes)[top_n_order[n]][i];
     }
+
+    if (top_n_probs[n] > intersection_thresh) {
+      LOG(INFO) << n << ": " << top_n_probs[n] << " "
+                << top_n_idxs[n] << " "
+                << top_n_boxes[n][0] << " " << top_n_boxes[n][1] << " "
+                << top_n_boxes[n][2] << " " << top_n_boxes[n][3] << "\n";
+    }
   }
+  return ;
+
   for (size_t c = 0; c < classes_; ++c) {
     std::vector<size_t> idxs_per_class;
     for (size_t n = 0; n < n_top_detections; ++n) {
@@ -696,7 +724,7 @@ void SqueezeDetLossLayer<Dtype>::filter_predictions(std::vector<std::vector<
       const int idx = itr - idxs_per_class.begin();
       probs_per_class[idx] = top_n_probs[*itr];
       for (size_t b = 0; b < 4; ++b) {
-        boxes_per_class[idx][b] = top_n_boxes[*itr][b];
+        boxes_per_class[idx].push_back(top_n_boxes[*itr][b]);
       }
     }
     keep_per_class = \
@@ -861,10 +889,10 @@ void SqueezeDetLossLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
               DCHECK_GE(anchor_idx, 0);
               DCHECK_LT(anchor_idx, anchors_);
               if (anchor_idx == max_iou_indx) {
-                _grad = ((2 * pos_conf_) / (batch_num_objs_[batch])) * \
+                _grad = ((2.0 * pos_conf_) / (batch_num_objs_[batch])) * \
                         (conf_score_pred - conf_score_truth);
               } else {
-                _grad =  ((2 * neg_conf_) / (anchors_ - \
+                _grad =  ((2.0 * neg_conf_) / (anchors_ - \
                         batch_num_objs_[batch])) * conf_score_pred;
               }
               if (obj == 0) {
@@ -900,28 +928,28 @@ void SqueezeDetLossLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
                   delta_bbox[((batch * H + height) * W + \
                   width) * anchors_per_grid * 4 + id + 0];
                 delta_truth = \
-                  gtruth_inv_.at(batch).at(obj).at(anchor_idx).at(0);
+                  gtruth_inv_[batch][obj][anchor_idx][0];
                 _grad_x = ((2 * lambda_bbox_) / batch_num_objs_[batch]) * \
                   (delta_pred - delta_truth);
                 delta_pred = \
                   delta_bbox[((batch * H + height) * W + \
                   width) * anchors_per_grid * 4 + id + 1];
                 delta_truth = \
-                  gtruth_inv_.at(batch).at(obj).at(anchor_idx).at(1);
+                  gtruth_inv_[batch][obj][anchor_idx][1];
                 _grad_y = ((2 * lambda_bbox_) / batch_num_objs_[batch]) * \
                   (delta_pred - delta_truth);
                 delta_pred = \
                   delta_bbox[((batch * H + height) * W + \
                   width) * anchors_per_grid * 4 + id + 2];
                 delta_truth = \
-                  gtruth_inv_.at(batch).at(obj).at(anchor_idx).at(2);
+                  gtruth_inv_[batch][obj][anchor_idx][2];
                 _grad_h = ((2 * lambda_bbox_) / batch_num_objs_[batch]) * \
                   (delta_pred - delta_truth);
                 delta_pred = \
                   delta_bbox[((batch * H + height) * W + \
                   width) * anchors_per_grid * 4 + id + 3];
                 delta_truth = \
-                  gtruth_inv_.at(batch).at(obj).at(anchor_idx).at(3);
+                  gtruth_inv_[batch][obj][anchor_idx][3];
                 _grad_w = ((2 * lambda_bbox_) / batch_num_objs_[batch]) * \
                   (delta_pred - delta_truth);
               } else {
