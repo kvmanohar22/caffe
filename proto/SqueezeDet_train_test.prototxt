@@ -24,6 +24,25 @@ layer {
    }
 }
 layer {
+   name: "data"
+   type: "BboxData"
+   top: "data"
+   bbox_data_param {
+     source:   "source.txt"
+     batch_size: 2 
+     is_color: true
+     root_folder: "VOC2012_Resize"
+   }
+   transform_param {
+     mean_value: 104
+     mean_value: 117
+     mean_value: 123
+   }
+   include {
+     phase: TEST
+   }
+}
+layer {
    name: "conv1"
    type: "Convolution"
    bottom: "data"

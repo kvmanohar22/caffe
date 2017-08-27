@@ -22,3 +22,5 @@ In the directory `proto`, you can find all the files necessary for running the m
 - For `<deploy-prototxt>`, use the `proto/SqueezeDet_train_test.prototxt`
 - For `<weights-file>`, use the
 `proto/SqueezeDet.caffemodel`
+
+For details on setting the variables for `test` phase in `proto/SqueezeDet_train_test.prototxt`, have a look at the protobuf message for [bbox_data_layer](https://github.com/kvmanohar22/caffe/blob/obj_detect_loss/src/caffe/proto/caffe.proto#L818).
