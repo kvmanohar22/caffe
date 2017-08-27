@@ -8,3 +8,17 @@
 Loss function is the implementation of this paper: [https://arxiv.org/abs/1612.01051](https://arxiv.org/abs/1612.01051)
 
 For more details pertaining to the loss function, refer this [blog post](https://kvmanohar22.github.io/GSoC/)
+
+## Weights and Deploy Scripts
+
+In the directory `proto`, you can find all the files necessary for running the models.
+
+## Model Testing
+
+```bash
+./caffe test -model <deploy-prototxt> -weights <weights-file>
+```
+
+- For `<deploy-prototxt>`, use the `proto/SqueezeDet_train_test.prototxt`
+- For `<weights-file>`, use the
+`proto/SqueezeDet.caffemodel`
