@@ -34,7 +34,7 @@ cd caffe
 git checkout obj_detect_loss
 ```
 
-Build `caffe` as usual now.
+Build `caffe` as usual now. [Instructions](https://github.com/BVLC/caffe/wiki/Ubuntu-16.04-or-15.10-Installation-Guide)
 
 ## Training your own models
 
@@ -124,7 +124,7 @@ Build `caffe` as usual now.
          }
       }
       ```
-  - Step 1: Permute this layer to get the output blob of this layer in the form: `[N, H, W, C]`
+  - Step 1: Caffe by default orders the data of a blob in the format `[N, C, H, W]`. We permute the top blob of `conv_xx` layer to get a new blob of shape: `[N, H, W, C]`
     - Example :
       ```
       layer {
@@ -140,14 +140,14 @@ Build `caffe` as usual now.
         }
       }
       ```
-  - Step 2: Slice this layer into three outputs as follows
+  - Step 2: Slice the top blob of `permute` layer along last axis to produce three blobs
     - 1st Slice, Name : `slice_0`, Shape : `[N, H, W, C0]`
     - 2nd Slice, Name : `slice_1`, Shape : `[N, H, W, C1]`
     - 3rd Slice, Name : `slice_2`, Shape : `[N, H, W, C2]`
-    - With `N`, `H`, `W` having their usual meanings and `K` being number of anchors per grid, `num_class` being the number of classes.
-    - `C0` : `num_class * K`
-    - `C1` : `K`
-    - `C2` : `4 * K`
+    - With `N`, `H`, `W` having their usual meanings, `K` being number of anchors per grid, `num_class` being the number of classes.
+    - `C0` = `num_class * K`
+    - `C1` = `K`
+    - `C2` = `4 * K`
     - Example :
       ```
       layer {
@@ -166,8 +166,8 @@ Build `caffe` as usual now.
       }
       ```
   - Step 3: Reshape `slice_0` from `[N, H, W, C0]` to `[N, X, Y]` producing the top blob `reshape_slice_0`
-    - `X` : `K * H * W`
-    - `Y` : `num_class`
+    - `X` = `K * H * W`
+    - `Y` = `num_class`
     - Example :
       ```
       layer {
@@ -185,7 +185,7 @@ Build `caffe` as usual now.
       }
       ```
   - Step 4: Apply softmax to the output of `reshape` layer
-    - Be careful with the axis along which softmax is applied, it's **not** the default axis.
+    - Be careful with the axis along which softmax is applied, it's **NOT** the default axis.
     - Example :
       ```
       layer {
@@ -216,7 +216,7 @@ Build `caffe` as usual now.
     - `sig_slice_1`
     - `slice_2`
     - `bbox`
-  - Set the parameters for `squeezedet_param`
+  - Set the parameters for [squeezedet_param](https://github.com/kvmanohar22/caffe/blob/obj_detect_loss/src/caffe/proto/caffe.proto#L1193)
   - Example (Network trained as part of GSoC) :
     ```
     layer {
@@ -256,3 +256,12 @@ Build `caffe` as usual now.
        }
     }
     ```
+
+  That's it. Start the training by
+
+  ```bash
+  cd caffe/build/tools
+  ./caffe train \
+  -solver <solver-file> \
+  -gpu 0 
+  ```
