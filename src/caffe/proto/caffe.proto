@@ -1222,7 +1222,8 @@ message SqueezeDetLossParameter {
   // The number of top predictions for bounding boxes to keep during test phase
   optional int32 n_top_detections = 10 [default = 64];
   // Intersection threshold
-  optional float intersection_thresh = 11 [default = 0.4];
+  optional float intersection_thresh = 11 [default = 0.53];
+  optional float nms_intersection_thresh = 12 [default = 0.1];
 }
 
 message TanHParameter {

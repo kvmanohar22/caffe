@@ -86,6 +86,7 @@ class SqueezeDetLossLayer : public LossLayer<Dtype> {
   int anchors_;
   int n_top_detections;
   float intersection_thresh;
+  float nms_intersection_thresh;
 
   // Anchor shape of the form
   // @f$ [anchors_, 4] @f$ where `4` values are as follows:

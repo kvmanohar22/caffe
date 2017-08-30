@@ -37,6 +37,8 @@ void  SqueezeDetLossLayer<Dtype>::LayerSetUp(
     n_top_detections = this->layer_param_.squeezedet_param().n_top_detections();
     intersection_thresh = \
         this->layer_param_.squeezedet_param().intersection_thresh();
+    nms_intersection_thresh = \
+        this->layer_param_.squeezedet_param().nms_intersection_thresh();
 
     CHECK_EQ(this->layer_param_.squeezedet_param().anchor_shapes_size(),
             2 * anchors_per_grid)
@@ -402,6 +404,20 @@ void SqueezeDetLossLayer<Dtype>::Forward_cpu(
         &batch_filtered_boxes[batch], conf_scores, iou_,
         class_scores);
     }
+    for (size_t batch = 0; batch < N; ++batch) {
+      std::cout << "--------\n";
+      std::cout << "Number of objects detected for image: " << batch
+                << " are: " << batch_filtered_boxes[batch].size() << "\n";
+      for (size_t obj = 0; obj < batch_filtered_boxes[batch].size(); ++obj) {
+        std::cout << "Obj #" << obj+1;
+        std::cout << " Class idx: " << batch_filtered_idxs[batch][obj]
+                  << " Probability: " << batch_filtered_probs[batch][obj]
+                  << " Co-ordinates: " << batch_filtered_boxes[batch][obj][0] << " "
+                  << batch_filtered_boxes[batch][obj][1] << " "
+                  << batch_filtered_boxes[batch][obj][2] << " "
+                  << batch_filtered_boxes[batch][obj][3] << "\n";
+      }
+    }
   }
 }
 
@@ -608,37 +624,33 @@ void SqueezeDetLossLayer<Dtype>::assert_predictions(
 template <typename Dtype>
 std::vector<bool> SqueezeDetLossLayer<Dtype>::non_maximal_suppression(
     std::vector<std::vector<Dtype> > *boxes, std::vector<Dtype> *probs) {
-  std::vector<bool> keep;
-  if ((*boxes).size() == 0) {
-    keep.resize(0);
-  } else {
-    keep.resize((*boxes).size());
-    std::fill(keep.begin(), keep.end(), true);
-    std::vector<size_t> prob_args_sorted((*probs).size());
-    std::iota(prob_args_sorted.begin(), prob_args_sorted.end(), 0);
-    std::sort(prob_args_sorted.begin(), prob_args_sorted.end(), \
-      [probs](size_t i1, size_t i2) {return (*probs)[i1] > (*probs)[i2];});
 
-    for (std::vector<size_t>::iterator itr = prob_args_sorted.begin();
-        itr != prob_args_sorted.end()-1; ++itr) {
-      const int idx = itr - prob_args_sorted.begin();
-      std::vector<float> iou_(prob_args_sorted.size()-idx-1);
-      std::vector<std::vector<Dtype> > temp_boxes(iou_.size());
-      for (size_t bb = 0; bb < temp_boxes.size(); ++bb) {
-        std::vector<Dtype> temp_box(4);
-        for (size_t b = 0; b < 4; ++b) {
-          temp_box[b] = (*boxes)[prob_args_sorted[idx+bb+1]][b];
-        }
-        temp_boxes[bb] = temp_box;
+  std::vector<bool> keep((*boxes).size());
+  std::fill(keep.begin(), keep.end(), true);
+  std::vector<size_t> prob_args_sorted((*probs).size());
+  std::iota(prob_args_sorted.begin(), prob_args_sorted.end(), 0);
+  std::sort(prob_args_sorted.begin(), prob_args_sorted.end(), \
+    [probs](size_t i1, size_t i2) {return (*probs)[i1] > (*probs)[i2];});
+
+  for (std::vector<size_t>::iterator itr = prob_args_sorted.begin();
+      itr != prob_args_sorted.end()-1; ++itr) {
+    const int idx = itr - prob_args_sorted.begin();
+    std::vector<float> iou_(prob_args_sorted.size()-idx-1);
+    std::vector<std::vector<Dtype> > temp_boxes(iou_.size());
+    for (size_t bb = 0; bb < temp_boxes.size(); ++bb) {
+      std::vector<Dtype> temp_box(4);
+      for (size_t b = 0; b < 4; ++b) {
+        temp_box[b] = (*boxes)[prob_args_sorted[idx+bb+1]][b];
       }
-      intersection_over_union(&temp_boxes, \
-          &(*boxes)[prob_args_sorted[idx]], &iou_);
-      for (std::vector<float>::iterator _itr = iou_.begin();
-          _itr != iou_.end(); ++_itr) {
-        const int iou_idx = _itr - iou_.begin();
-        if (*_itr > intersection_thresh) {
-          keep[prob_args_sorted[idx+iou_idx+1]] = false;
-        }
+      temp_boxes[bb] = temp_box;
+    }
+    intersection_over_union(&temp_boxes, \
+        &(*boxes)[prob_args_sorted[idx]], &iou_);
+    for (std::vector<float>::iterator _itr = iou_.begin();
+        _itr != iou_.end(); ++_itr) {
+      const int iou_idx = _itr - iou_.begin();
+      if (*_itr > nms_intersection_thresh) {
+        keep[prob_args_sorted[idx+iou_idx+1]] = false;
       }
     }
   }
@@ -677,19 +689,6 @@ void SqueezeDetLossLayer<Dtype>::filter_predictions(std::vector<std::vector<
     top_n_boxes[i].resize(4);
   }
 
-  std::vector<Dtype> dummy_probability;
-  for (size_t b=0; b<N; ++b) {
-    for (size_t h=0; h<H; ++h) {
-      for (size_t w=0; w<W; ++w) {
-        for (size_t k=0; k<9; ++k) {
-          const int anch = ((b*H+h)*W+w)*9+k;
-          DCHECK_LT(anch, anchors_);
-          Dtype _prob_ = conf_scores[anch];
-          dummy_probability.push_back(_prob_);
-        }
-      }
-    }
-  }
   for (size_t n = 0; n < n_top_detections; ++n) {
     top_n_probs[n] = max_class_probs[top_n_order[n]];
     top_n_idxs[n]  = \
@@ -699,15 +698,7 @@ void SqueezeDetLossLayer<Dtype>::filter_predictions(std::vector<std::vector<
     for (size_t i = 0; i < 4; ++i) {
       top_n_boxes[n][i] = (*boxes)[top_n_order[n]][i];
     }
-
-    if (top_n_probs[n] > intersection_thresh) {
-      LOG(INFO) << n << ": " << top_n_probs[n] << " "
-                << top_n_idxs[n] << " "
-                << top_n_boxes[n][0] << " " << top_n_boxes[n][1] << " "
-                << top_n_boxes[n][2] << " " << top_n_boxes[n][3] << "\n";
-    }
   }
-  return ;
 
   for (size_t c = 0; c < classes_; ++c) {
     std::vector<size_t> idxs_per_class;
@@ -716,6 +707,11 @@ void SqueezeDetLossLayer<Dtype>::filter_predictions(std::vector<std::vector<
         idxs_per_class.push_back(n);
       }
     }
+
+    if (idxs_per_class.size() == 0) {
+      continue;
+    }
+
     std::vector<std::vector<Dtype> > boxes_per_class(idxs_per_class.size());
     std::vector<Dtype> probs_per_class(idxs_per_class.size());
     std::vector<bool> keep_per_class;
@@ -732,7 +728,7 @@ void SqueezeDetLossLayer<Dtype>::filter_predictions(std::vector<std::vector<
     for (std::vector<bool>::iterator itr = keep_per_class.begin();
         itr != keep_per_class.end(); ++itr) {
       const int idx = itr - keep_per_class.begin();
-      if (*itr) {
+      if (*itr && probs_per_class[idx] > intersection_thresh) {
         (*filtered_idxs).push_back(c);
         (*filtered_probs).push_back(probs_per_class[idx]);
         std::vector<Dtype> temp_box(4);
