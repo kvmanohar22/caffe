@@ -263,5 +263,55 @@ Build `caffe` as usual now. [Instructions](https://github.com/BVLC/caffe/wiki/Ub
   cd caffe/build/tools
   ./caffe train \
   -solver <solver-file> \
-  -gpu 0 
+  -gpu 0
   ```
+
+  ## Results from Training (as part of GSoC)
+
+  Original Image                    |    |  Probability : 84.52%
+  :--------------------------------:|:--:|:--------------------------------:
+  ![Image_0](images/aero.jpg?raw=true)  |    |![Detection_0](images/aero_det.png?raw=true)
+
+
+  Original Image                    |    |  Probability : 70.18%
+  :--------------------------------:|:--:|:--------------------------------:
+  ![Image_0](images/bus.jpg?raw=true)   |    |![Detection_0](images/bus_det.png?raw=true)
+
+
+  Original Image                    |   |  Probability : 70.35%
+  :--------------------------------:|:--|-----------------------------:
+  ![Image_0](images/cat.jpg?raw=true)   |   |![Detection_0](images/cat_det.png?raw=true)
+
+
+  Original Image                    |    |  Probability : 74.51%
+  :--------------------------------:|:---|-----------------------------:
+  ![Image_0](images/person.jpg?raw=true)  |  |![Detection_0](images/person_det.png?raw=true)
+
+
+  Original Image                    |    |  Probability : 73.73% & 72.03%
+  :--------------------------------:|:---|-----------------------------:
+  ![Image_0](images/persons_multi.png?raw=true)|  |  ![Detection_0](images/person_multi_det.png?raw=true)
+
+
+  Original Image                    |    |  Probability : Boat(53.43%) & Person(53.04%)
+  :--------------------------------:|:---|-----------------------------:
+  ![Image_0](images/boat.jpg?raw=true)  |    |  ![Detection_0](images/boat_det.png?raw=true)
+
+  I'm exaggerating here. Hmmmm..... I myself couldn't recognize that there was a person out there on the deck !
+
+
+  Original Image                       |   |  Probability : Horse(74.26%) & Person(96.26%)
+  :-----------------------------------:|:--|------------------------------:
+  ![Image_0](images/multi_1.jpg?raw=true)  |   |![Detection_0](images/multi_1_det.png?raw=true)
+
+
+  ### Oops
+
+  Original Image                       |    | Probability : 74.12%
+  :-----------------------------------:|:---|-----------------------------:
+  ![Image_0](images/dog.jpg?raw=true)  |    | ![Detection_0](images/dog_det.png?raw=true)
+
+
+  Original Image                       |    |  Probability : Train(69.65%) & Person(69.47%)
+  :-----------------------------------:|:---|-----------------------------:
+  ![Image_0](images/train.jpg?raw=true)  |   |  ![Detection_0](images/train_det.png?raw=true)
